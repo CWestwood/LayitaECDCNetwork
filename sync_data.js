@@ -1,58 +1,109 @@
+require('dotenv').config();
 const admin = require('firebase-admin');
-const axios = require('axios');
-const dotenv = require('dotenv').config();
 
-// Initialize Firebase using the secret from GitHub
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+let serviceAccount;
+
+if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  // GitHub Actions / CI
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+} else {
+  // Local development
+  serviceAccount = require('./serviceAccountKey.json');
+}
+
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
+  projectId: serviceAccount.project_id
 });
 
 const db = admin.firestore();
 
-async function sync() {
-  const ASSET_UID = process.env.KOBO_ECDCNETWORK_UID;
-  const url = `https://eu.kobotoolbox.org/api/v2/assets/aBDr44ofjqRWqmSHM5vYLR/data`;
-  console.log('Requesting data from URL:', url);
+/**
+ * Fetches data from KoboToolbox and syncs to Firestore
+ * @param {string} collectionName - Firestore collection to store data
+ * @returns {Promise<Object>} Result object with success status and counts
+ */
+async function syncKoboToFirestore(collectionName = 'kobo_submissions') {
   try {
-    const response = await axios.get(url, {
-      headers: { 'Authorization': `Token ${process.env.KOBO_API_KEY}` }
+    // Fetch data from KoboToolbox
+    const koboUrl = `https://eu.kobotoolbox.org/api/v2/assets/${process.env.KOBO_ECDCNETWORK_UID}/data.json?limit=1000`;
+    const koboApiKey = process.env.KOBO_API_KEY?.trim();
+
+    console.log('Project ID:', process.env.FIREBASE_PROJECT_ID);
+    console.log('Fetching data from KoboToolbox...');
+    
+    
+    const response = await fetch(koboUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Token ${koboApiKey}`,
+        'Content-Type': 'application/json'
+      }
     });
 
+    if (!response.ok) {
+      throw new Error(`KoboToolbox API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const submissions = data.results || [];
+
+    console.log(`Retrieved ${submissions.length} submissions from KoboToolbox`);
+
+    // Push data to Firestore
     const batch = db.batch();
-    const records = response.data.results;
-    const collectionRef = db.collection('kobo_data');
-    // Fetch all existing document IDs in one go
-    const existingDocsSnap = await collectionRef.where(admin.firestore.FieldPath.documentId(), 'in', records.map(r => r._id.toString()).slice(0, 10)).get();
-    // Firestore 'in' queries are limited to 10, so chunk if needed
-    let existingIds = existingDocsSnap.docs.map(doc => doc.id);
-    if (records.length > 10) {
-      for (let i = 10; i < records.length; i += 10) {
-        const chunk = records.slice(i, i + 10);
-        const snap = await collectionRef.where(admin.firestore.FieldPath.documentId(), 'in', chunk.map(r => r._id.toString())).get();
-        existingIds = existingIds.concat(snap.docs.map(doc => doc.id));
+    let count = 0;
+
+    for (const submission of submissions) {
+      // Use KoboToolbox submission ID as document ID
+      const docId = submission._id ? submission._id.toString() : `submission_${Date.now()}_${count}`;
+      const docRef = db.collection(collectionName).doc(docId);
+      
+      // Add metadata
+      const dataToStore = {
+        ...submission,
+        syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'kobotoolbox'
+      };
+      delete dataToStore.__version__;
+
+      batch.set(docRef, dataToStore, { merge: true });
+      count++;
+
+      // Firestore batch has a limit of 500 operations
+      if (count % 500 === 0) {
+        await batch.commit();
+        console.log(`Committed batch of ${count} documents`);
       }
     }
-    // Add only records not already in Firestore
-    let newCount = 0;
-    records.forEach(record => {
-      const docId = record._id.toString();
-      if (!existingIds.includes(docId)) {
-        const docRef = collectionRef.doc(docId);
-        batch.set(docRef, record, { merge: true });
-        newCount++;
-      }
-    });
-    if (newCount > 0) {
+
+    // Commit remaining documents
+    if (count % 500 !== 0) {
       await batch.commit();
-      console.log(`Added ${newCount} new records.`);
-    } else {
-      console.log("No new records to add.");
     }
-  } catch (e) {
-    console.error("Sync Failed", e);
-    process.exit(1);
+
+    console.log(`Successfully synced ${count} submissions to Firestore`);
+
+    return {
+      success: true,
+      totalSubmissions: submissions.length,
+      syncedCount: count,
+      collection: collectionName
+    };
+
+  } catch (error) {
+    console.error('Error syncing data:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
-sync();
+// Export the function
+module.exports = { syncKoboToFirestore };
+
+// Example usage (uncomment to run directly)
+syncKoboToFirestore('kobo_submissions')
+   .then(result => console.log('Sync result:', result))
+   .catch(err => console.error('Sync failed:', err));
