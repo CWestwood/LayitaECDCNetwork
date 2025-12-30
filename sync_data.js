@@ -1,5 +1,6 @@
 const admin = require('firebase-admin');
 const axios = require('axios');
+require('dotenv').config();
 
 // Initialize Firebase using the secret from GitHub
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
