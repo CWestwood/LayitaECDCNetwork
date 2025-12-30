@@ -8,6 +8,10 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+          KOBO_API_KEY: ${{ secrets.KOBO_API_KEY }}
+          KOBO_ECDCNETWORK_UID: ${{ secrets.KOBO_ECDCNETWORK_UID }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,7 +19,4 @@ jobs:
           node-version: '20'
       - run: npm install
       - name: Run Sync
-        env:
-          KOBO_API_TOKEN: ${{ secrets.KOBO_API_KEY }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node sync_data.js
