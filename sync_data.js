@@ -12,7 +12,7 @@ const db = admin.firestore();
 
 async function sync() {
   const ASSET_UID = process.env.KOBO_ECDCNETWORK_UID;
-  const url = `https://kobo.humanitarianresponse.info/api/v2/assets/${ASSET_UID}/data.json`;
+  const url = `https://kobo.humanitarianresponse.info/api/v2/assets/aSw4XLs4jNHrGMP8gnZy8odata.json`;
   console.log('Requesting data from URL:', url);
   try {
     const response = await axios.get(url, {
@@ -45,9 +45,9 @@ async function sync() {
     });
     if (newCount > 0) {
       await batch.commit();
-      console.log(`Sync Complete! Added ${newCount} new records.`);
+      console.log(`Added ${newCount} new records.`);
     } else {
-      console.log("Sync Complete! No new records to add.");
+      console.log("No new records to add.");
     }
   } catch (e) {
     console.error("Sync Failed", e);
