@@ -12,7 +12,7 @@ const db = admin.firestore();
 
 async function sync() {
   const ASSET_UID = process.env.KOBO_ECDCNETWORK_UID;
-  const url = `https://kobo.humanitarianresponse.info/api/v2/assets/aBDr44ofjqRWqmSHM5vYLR/data.json`;
+  const url = `https://eu.kobotoolbox.org/api/v2/assets/aBDr44ofjqRWqmSHM5vYLR/data.json`;
   console.log('Requesting data from URL:', url);
   try {
     const response = await axios.get(url, {
