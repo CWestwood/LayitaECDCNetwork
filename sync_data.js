@@ -1,6 +1,6 @@
 const admin = require('firebase-admin');
 const axios = require('axios');
-require('dotenv').config();
+const dotenv = require('dotenv').config();
 
 // Initialize Firebase using the secret from GitHub
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -13,7 +13,7 @@ const db = admin.firestore();
 async function sync() {
   const ASSET_UID = process.env.KOBO_ECDCNETWORK_UID;
   const url = `https://kobo.humanitarianresponse.info/api/v2/assets/${ASSET_UID}/data.json`;
-  
+  console.log('Requesting data from URL:', url);
   try {
     const response = await axios.get(url, {
       headers: { 'Authorization': `Token ${process.env.KOBO_API_KEY}` }
