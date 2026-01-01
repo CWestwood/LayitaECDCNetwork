@@ -29,7 +29,6 @@ async function syncKoboToFirestore(collectionName = 'kobo_submissions') {
     const koboUrl = `https://eu.kobotoolbox.org/api/v2/assets/${process.env.KOBO_ECDCNETWORK_UID}/data.json?limit=1000`;
     const koboApiKey = process.env.KOBO_API_KEY?.trim();
 
-    console.log('Project ID:', process.env.FIREBASE_PROJECT_ID);
     console.log('Fetching data from KoboToolbox...');
     
     
