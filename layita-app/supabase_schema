@@ -1,0 +1,113 @@
+create table public.profiles (
+  created_at timestamp with time zone not null default now(),
+  name text null,
+  role text null,
+  email text null,
+  id uuid not null default gen_random_uuid (),
+  constraint users_pkey primary key (id),
+  constraint profiles_email_key unique (email),
+  constraint profiles_name_key unique (name),
+  constraint profiles_id_fkey foreign KEY (id) references auth.users (id) on update CASCADE on delete CASCADE,
+  constraint users_role_check check (
+    (
+      role = any (
+        array[
+          'administrator'::text,
+          'library'::text,
+          'manager'::text,
+          'datacapturer'::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create table public.visit_requirements (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default now(),
+  area_id uuid null default gen_random_uuid (),
+  minimum_visits_per_year smallint null default '1'::smallint,
+  constraint visit_requirements_pkey primary key (id),
+  constraint visit_requirements_area_id_fkey foreign KEY (area_id) references area(id) on update CASCADE on delete RESTRICT
+) TABLESPACE pg_default;
+
+create table public.practitioners (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default now(),
+  name text null,
+  contact_number1 text null,
+  contact_number2 text null,
+  ecdc_id uuid null,
+  updated_at timestamp with time zone null default now(),
+  group_id uuid null,
+  constraint practitioners_pkey primary key (id),
+  constraint practitioners_ecdc_id_fkey foreign KEY (ecdc_id) references ecdc_list (id) on update CASCADE on delete set null,
+  constraint practitioners_group_id_fkey foreign KEY (group_id) references groups (id) on update CASCADE on delete RESTRICT
+) TABLESPACE pg_default;
+
+create table public.outreach_visits (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default now(),
+  date date null,
+  practitioner_id uuid null,
+  outreach_type text null,
+  transport_type text null,
+  transport_cost numeric null,
+  transport_km numeric null,
+  parents_trained numeric null,
+  children_books numeric null,
+  total_books_to_children numeric null,
+  books_to_practitioner numeric null,
+  data_capturer_id uuid null,
+  photos_taken boolean null,
+  comments text null,
+  outreach_happened text null,
+  did_instead text null,
+  constraint outreach_visits_pkey primary key (id),
+  constraint outreach_visits_data_capturer_id_fkey foreign KEY (data_capturer_id) references layita_staff (id) on update CASCADE on delete RESTRICT,
+  constraint outreach_visits_practitioner_id_fkey foreign KEY (practitioner_id) references practitioners (id) on update CASCADE on delete RESTRICT,
+  constraint outreach_visits_transport_cost_check check ((transport_cost >= (0)::numeric)),
+  constraint outreach_visits_transport_km_check check ((transport_km >= (0)::numeric))
+) TABLESPACE pg_default;
+
+create table public.layita_staff (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default now(),
+  name text not null,
+  constraint layita_staff_pkey primary key (id),
+  constraint layita_staff_name_key unique (name)
+) TABLESPACE pg_default;
+
+create table public.groups (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default now(),
+  group_name text not null,
+  organisation text null default 'Smartstart'::text,
+  area_id uuid null,
+  constraint groups_pkey primary key (id),
+  constraint groups_group_name_key unique (group_name),
+  constraint groups_area_id_fkey foreign KEY (area_id) references area(id) on update CASCADE on delete RESTRICT
+) TABLESPACE pg_default;
+
+create table public.ecdc_list (
+  created_at timestamp with time zone not null default now(),
+  name text null,
+  area text null,
+  location geography null,
+  longitude double precision null,
+  latitude double precision null,
+  id uuid not null,
+  area_id uuid null default '6b785fc8-b0b5-4141-9255-249a39251c8a'::uuid,
+  constraint ecdc_list_pkey primary key (id),
+  constraint ecdc_list_area_id_fkey foreign KEY (area_id) references area(id) on update CASCADE on delete RESTRICT
+) TABLESPACE pg_default;
+
+create index IF not exists ecdc_list_location_idx on public.ecdc_list using gist (location) TABLESPACE pg_default;
+
+create table public.area (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default now(),
+  name text null,
+  is_active boolean null default true,
+  constraint area_pkey primary key (id)
+) TABLESPACE pg_default;
