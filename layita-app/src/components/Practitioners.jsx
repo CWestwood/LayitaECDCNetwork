@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
 import { themeColors } from "../constants/layita_colors";
+import logo from '../assets/layitalogo.svg';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GROUP COLOR MAPPING (mirrored from ECDCMap)
@@ -959,7 +960,7 @@ export default function Practitioners() {
         {/* ── Sidebar ── */}
         <div className={`prac-sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
           <div className="prac-sidebar-top">
-            <img className="prac-sidebar-logo" src="/src/assets/layitalogo.svg" alt="Layita" />
+            <img className="prac-sidebar-logo" src={logo} alt="Layita" />
             <button className="prac-collapse-btn" onClick={() => setSidebarCollapsed(v => !v)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 {sidebarCollapsed ? <polyline points="9 18 15 12 9 6"/> : <polyline points="15 18 9 12 15 6"/>}

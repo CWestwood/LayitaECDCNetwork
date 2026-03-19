@@ -5,6 +5,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "../services/supabaseClient";
 import { themeColors } from "../constants/layita_colors";
+import logo from '../assets/layitalogo.svg';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GROUP COLOR MAPPING
@@ -770,7 +772,7 @@ export default function ECDCMap() {
         {/* ── Sidebar ── */}
         <div className={`ecdc-sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
           <div className="ecdc-sidebar-top">
-            <img className="ecdc-sidebar-logo" src="/src/assets/layitalogo.svg" alt="Layita" />
+            <img className="ecdc-sidebar-logo" src={logo} alt="Layita" />
             <button
               className="ecdc-collapse-btn"
               onClick={() => setSidebarCollapsed((v) => !v)}

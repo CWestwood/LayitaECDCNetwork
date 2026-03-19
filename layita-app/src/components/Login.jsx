@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { LAYITA_HEX_COLORS } from '../constants/layita_colors';
+import logo from '../assets/layitalogo.svg';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -27,7 +28,7 @@ const Login = () => {
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
       <div style={{ flex: 1, backgroundColor: LAYITA_HEX_COLORS.blue, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'white', padding: '40px' }}>
-        <img src="/src/assets/layitalogo.svg" alt="Layita Logo" style={{ width: '200px', marginBottom: '20px' }} />
+        <img src={logo} alt="Layita Logo" style={{ width: '200px', marginBottom: '20px' }} />
         <h1>Welcome to Layita ECDC Network</h1>
         <p>Connecting and supporting early childhood development centers.</p>
       </div>
