@@ -690,10 +690,11 @@ export default function Practitioners() {
     const total = practitioners.length;
     const neverVisited = practitioners.filter(p => !lastVisitMap.has(p.id)).length;
     const overdue = practitioners.filter(p => daysSince(lastVisitMap.get(p.id)) > 180).length;
+    const thisyear = practitioners.filter(p => lastVisitMap.get(p.id) >= `${new Date().getFullYear()}-01-01`).length;
     const fullyTrained = practitioners.filter(p =>
       TRAINING_FILTERS.every(f => p.training?.[f.key])
     ).length;
-    return { total, neverVisited, overdue, fullyTrained };
+    return { total, neverVisited, overdue, fullyTrained, thisyear };
   }, [practitioners, lastVisitMap]);
 
   const toggleGroup = (g) => setActiveGroups(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g]);
@@ -1056,16 +1057,16 @@ export default function Practitioners() {
               <div className="prac-stat-label">Total</div>
             </div>
             <div className="prac-stat">
+              <div className="prac-stat-value" style={{ color: t.success }}>{stats.thisyear}</div>
+              <div className="prac-stat-label">Visited this year</div>
+            </div>
+            <div className="prac-stat">
               <div className="prac-stat-value" style={{ color: t.danger }}>{stats.neverVisited}</div>
               <div className="prac-stat-label">Never visited</div>
             </div>
             <div className="prac-stat">
               <div className="prac-stat-value" style={{ color: t.warning }}>{stats.overdue}</div>
               <div className="prac-stat-label">Overdue (&gt;6mo)</div>
-            </div>
-            <div className="prac-stat">
-              <div className="prac-stat-value" style={{ color: t.success }}>{stats.fullyTrained}</div>
-              <div className="prac-stat-label">Fully trained</div>
             </div>
           </div>
 
