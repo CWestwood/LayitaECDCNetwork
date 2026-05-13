@@ -522,7 +522,7 @@ export default function ECDCMap() {
                 onClick={handleViewPractitioners}
                 title="View practitioners for selected centres"
               >
-                Practitioners
+                View Practitioners
               </button>
               <button
                 className="ecdc-select-toolbar__btn"
