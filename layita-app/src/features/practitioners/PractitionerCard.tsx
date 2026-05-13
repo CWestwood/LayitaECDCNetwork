@@ -15,9 +15,10 @@ interface Props {
   selected: Practitioner | null;
   lastVisit: string | undefined;
   onClick: () => void;
+  isMultiSelected?: boolean;
 }
 
-export default function PractitionerCard({ p, selected, lastVisit, onClick }: Props) {
+export default function PractitionerCard({ p, selected, lastVisit, onClick, isMultiSelected, onMultiSelectToggle }: Props) {
   const color          = resolveGroupColor(p.group?.group_name);
   const shortGroupName = resolveGroupNameShortForm(p.group?.group_name);
   const days           = daysSince(lastVisit);
@@ -31,6 +32,12 @@ export default function PractitionerCard({ p, selected, lastVisit, onClick }: Pr
       style={{ "--group-color": color.fill } as React.CSSProperties}
     >
       <div className="p2-card__stripe" />
+
+      {onMultiSelectToggle && (
+        <div className="p2-card__checkbox" onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 2 }}>
+          <input type="checkbox" checked={isMultiSelected || false} onChange={onMultiSelectToggle} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+        </div>
+      )}
 
       <div className="p2-card__header">
         <div className="p2-card__initials">

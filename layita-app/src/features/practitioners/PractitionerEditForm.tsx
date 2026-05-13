@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../auth/supabaseClient';
 import { Practitioner } from './types';
 import { Icon, Icons } from './_components';
+import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
 
 interface Group {
   id: string;
@@ -38,6 +39,14 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
     dsd_registered: p.dsd_registered || false,
   });
 
+  const [trainingForm, setTrainingForm] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    TRAINING_FILTERS.forEach((f) => {
+      init[f.key] = !!p.training?.[f.key];
+    });
+    return init;
+  });
+
   useEffect(() => {
     async function fetchOptions() {
       const [grpRes, ecdcRes] = await Promise.all([
@@ -65,6 +74,9 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
 
   const set = (field: keyof typeof form, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [field]: value }));
+
+  const setTraining = (key: string, value: boolean) =>
+    setTrainingForm((prev) => ({ ...prev, [key]: value }));
 
   const handleSave = async () => {
     setSaving(true);
@@ -94,6 +106,19 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
     if (count === 0) { 
       setError('Permission denied — only administrators can edit practitioners.'); 
       return; 
+    }
+
+    const { error: trainingError } = await supabase
+      .from('training')
+      .upsert({
+        id: p.id,
+        ...trainingForm
+      });
+
+    if (trainingError) {
+      setError(`Failed to save training data: ${trainingError.message}`);
+      setSaving(false);
+      return;
     }
 
     onSaved?.();
@@ -188,6 +213,20 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
             <input type="checkbox" checked={form.dsd_registered} onChange={(e) => set('dsd_registered', e.target.checked)} />
             DSD Registered
           </label>
+        </div>
+
+        <div className="p2-edit-section-heading">Training</div>
+        <div className="p2-edit-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+          {TRAINING_FILTERS.map((f) => (
+            <label key={f.key} className="p2-edit-checkbox-label">
+              <input 
+                type="checkbox" 
+                checked={trainingForm[f.key]} 
+                onChange={(e) => setTraining(f.key, e.target.checked)} 
+              />
+              {f.label}
+            </label>
+          ))}
         </div>
 
         {error && <div className="p2-edit-error">{error}</div>}

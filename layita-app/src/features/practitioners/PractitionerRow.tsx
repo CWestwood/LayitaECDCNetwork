@@ -14,9 +14,11 @@ interface Props {
   selected: Practitioner | null;
   lastVisit: string | undefined;
   onClick: () => void;
+  isMultiSelected?: boolean;
+  onMultiSelectToggle?: (e: React.SyntheticEvent) => void;
 }
 
-export default function PractitionerRow({ p, selected, lastVisit, onClick }: Props) {
+export default function PractitionerRow({ p, selected, lastVisit, onClick, isMultiSelected, onMultiSelectToggle }: Props) {
   const color      = resolveGroupColor(p.group?.group_name);
   const group      = p.group?.group_name;
   const days       = daysSince(lastVisit);
@@ -30,6 +32,14 @@ export default function PractitionerRow({ p, selected, lastVisit, onClick }: Pro
       style={{ "--group-color": color.fill } as React.CSSProperties}
     >
       <div className="p2-row__indicator" />
+
+      {onMultiSelectToggle ? (
+        <div className="p2-row__checkbox" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <input type="checkbox" checked={isMultiSelected || false} onChange={onMultiSelectToggle} style={{ cursor: 'pointer', width: '15px', height: '15px' }} />
+        </div>
+      ) : (
+        <div />
+      )}
 
       <div className="p2-row__name-col">
         <span className="p2-row__name">{p.name || "—"}</span>
@@ -62,7 +72,12 @@ export default function PractitionerRow({ p, selected, lastVisit, onClick }: Pro
 
       <div className="p2-row__children-count">
         {p.ecdc?.number_children ?? "—"}
+        <div className="p2-row__children-updated"> 
+          {p.ecdc?.attendance_updated ? new Date(p.ecdc.attendance_updated).toLocaleDateString("en-GB") : p.ecdc?.created_at ? new Date(p.ecdc.created_at).toLocaleDateString("en-GB") : "—"}
+        </div>
       </div>
+
+     
 
       <div className="p2-row__flags">
         {p.has_whatsapp && (

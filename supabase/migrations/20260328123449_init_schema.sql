@@ -329,7 +329,7 @@ ALTER VIEW "public"."kobotoolbox_ecdc_export" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."kobotoolbox_practitioners_export" AS
- SELECT "md5"(("p"."id")::"text") AS "name",
+ SELECT ("p"."id")::"text" AS "name",
     "p"."name" AS "label",
     ("p"."ecdc_id")::"text" AS "ecdc",
     "p"."contact_number1" AS "contact1",

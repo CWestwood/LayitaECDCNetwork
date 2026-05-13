@@ -1,6 +1,7 @@
 // src/features/practitioners/index.tsx
 
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { resolveGroupColor, resolveGroupNameShortForm } from "../../lib/Groupcolors";
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
 import { usePractitioners, useGlobalVisitStats } from "./api/usePractitioners";
@@ -39,13 +40,18 @@ type SortKey = typeof SORT_OPTIONS[number]["key"];
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Practitioners() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selected,        setSelected]        = useState<Practitioner | null>(null);
+  const [selectedIds,     setSelectedIds]     = useState<Set<string>>(new Set());
   const [search,          setSearch]          = useState("");
   const [sortKey,         setSortKey]         = useState<SortKey>("name_asc");
   const [viewMode,        setViewMode]        = useState<"list" | "grid">("list");
   const [activeGroups,    setActiveGroups]    = useState<string[]>([]);
   const [activeTraining,  setActiveTraining]  = useState<string[]>([]);
   const [trainingMode,    setTrainingMode]    = useState<"has" | "needs">("has");
+  const [viewSelectedOnly, setViewSelectedOnly] = useState(false);
+  const [hasProcessedUrl, setHasProcessedUrl] = useState(false);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const { data: practitioners = [], isLoading: pracLoading  } = usePractitioners();
@@ -63,6 +69,49 @@ export default function Practitioners() {
     }
     return map;
   }, [globalVisits]);
+
+  useEffect(() => {
+    if (hasProcessedUrl) return;
+
+    const pParam = searchParams.get('practitioners');
+    const eParam = searchParams.get('ecdcs');
+
+    if (!pParam && !eParam) {
+      setHasProcessedUrl(true);
+      return;
+    }
+
+    if (eParam && pracLoading) {
+      return; // Wait for practitioners to load before matching ecdcs
+    }
+
+    const newSearchParams = new URLSearchParams(searchParams);
+    const idsToSelect = new Set<string>();
+
+    if (pParam) {
+      pParam.split(',').forEach(id => idsToSelect.add(id));
+      newSearchParams.delete('practitioners');
+    }
+
+    if (eParam) {
+      const ecdcIds = new Set(eParam.split(','));
+      practitioners.forEach(p => {
+        const ecdcId = p.ecdc?.id;
+        if (ecdcId && ecdcIds.has(String(ecdcId))) {
+          idsToSelect.add(String(p.id));
+        }
+      });
+      newSearchParams.delete('ecdcs');
+    }
+
+    if (idsToSelect.size > 0) {
+      setSelectedIds(idsToSelect);
+      setViewSelectedOnly(true);
+    }
+
+    setSearchParams(newSearchParams, { replace: true });
+    setHasProcessedUrl(true);
+  }, [searchParams, setSearchParams, practitioners, pracLoading, hasProcessedUrl]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const allGroups = useMemo(() => {
@@ -86,7 +135,8 @@ export default function Practitioners() {
         const hasTraining = p.training?.[k] === true;
         return trainingMode === "has" ? hasTraining : !hasTraining;
       });
-      return matchSearch && matchGroup && matchTraining;
+      const matchSelected = !viewSelectedOnly || selectedIds.has(p.id);
+      return matchSearch && matchGroup && matchTraining && matchSelected;
     });
 
     return [...list].sort((a, b) => {
@@ -104,7 +154,7 @@ export default function Practitioners() {
         default: return 0;
       }
     });
-  }, [practitioners, search, activeGroups, activeTraining, trainingMode, sortKey, lastVisitMap]);
+  }, [practitioners, search, activeGroups, activeTraining, trainingMode, sortKey, lastVisitMap, viewSelectedOnly, selectedIds]);
 
   const stats = useMemo(() => ({
     total:   practitioners.length,
@@ -128,12 +178,41 @@ export default function Practitioners() {
     setActiveGroups([]); 
     setActiveTraining([]); 
     setTrainingMode("has"); 
+    setViewSelectedOnly(false);
   }, []);
 
   const handleSelect   = useCallback((p: Practitioner) =>
     setSelected((prev) => prev?.id === p.id ? null : p), []);
 
-  const anyFilters = activeGroups.length > 0 || activeTraining.length > 0;
+  const toggleMultiSelect = useCallback((id: string, e: React.SyntheticEvent) => {
+    e.stopPropagation(); // Prevent row click from opening the detail panel
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const strId = String(id);
+      next.has(strId) ? next.delete(strId) : next.add(strId);
+      return next;
+    });
+  }, []);
+
+  const anyFilters = activeGroups.length > 0 || activeTraining.length > 0 || viewSelectedOnly;
+
+  const handleViewOnMap = () => {
+    // Extract unique ECDC IDs from the selected practitioners
+    const ecdcIds = Array.from(selectedIds)
+      .map(id => {
+        const prac = practitioners.find(p => String(p.id) === String(id));
+        return prac?.ecdc?.id;
+      })
+      .filter(Boolean);
+    
+    const uniqueEcdcIds = Array.from(new Set(ecdcIds));
+    
+    if (uniqueEcdcIds.length > 0) {
+      navigate(`/map?ecdcs=${uniqueEcdcIds.join(',')}`);
+    } else {
+      alert("None of the selected practitioners are assigned to an ECDC.");
+    }
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -145,6 +224,20 @@ export default function Practitioners() {
         {/* ── Top bar ── */}
         <header className="p2-topbar">
           <h1 className="p2-topbar__title">Practitioners</h1>
+
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }}>
+              <button 
+                className={`p2-chip ${viewSelectedOnly ? "p2-chip--active" : ""}`} 
+                onClick={() => setViewSelectedOnly(!viewSelectedOnly)}
+              >
+                {viewSelectedOnly ? "Showing selected" : "Show selected only"}
+              </button>
+              <button className="p2-chip p2-chip--active" onClick={handleViewOnMap} style={{ background: '#3b82f6', color: 'white', border: 'none' }}>
+                View {selectedIds.size} on Map
+              </button>
+            </div>
+          )}
 
           <div className="p2-topbar__controls">
             <div className="p2-search">
@@ -292,13 +385,15 @@ export default function Practitioners() {
             ) : viewMode === "list" ? (
               <>
                 <div className="p2-list-header">
+                  <div></div> {/* Indicator spacer */}
+                  <div></div> {/* Checkbox spacer */}
                   <div>Name / Group</div>
                   <div>ECDC / Area</div>
                   <div>Chief / Headman</div>
                   <div>Last Interaction</div>
                   <div>Training</div>
                   <div># of Children</div>
-                  <div></div>
+                  <div></div> {/* Flags spacer */}
                 </div>
                 <div className="p2-list-scroll">
                   {filtered.map((p) => (
@@ -308,6 +403,8 @@ export default function Practitioners() {
                       selected={selected}
                       lastVisit={lastVisitMap.get(p.id)}
                       onClick={() => handleSelect(p)}
+                      isMultiSelected={selectedIds.has(String(p.id))}
+                      onMultiSelectToggle={(e) => toggleMultiSelect(String(p.id), e)}
                     />
                   ))}
                 </div>
@@ -322,6 +419,8 @@ export default function Practitioners() {
                       selected={selected}
                       lastVisit={lastVisitMap.get(p.id)}
                       onClick={() => handleSelect(p)}
+                      isMultiSelected={selectedIds.has(String(p.id))}
+                      onMultiSelectToggle={(e) => toggleMultiSelect(String(p.id), e)}
                     />
                   ))}
                 </div>

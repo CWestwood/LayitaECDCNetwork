@@ -41,3 +41,20 @@ left join practitioners prac
   or r.payload->>'ecdc_practitioner' = md5(prac.id::text)
 
 order by r.submitted_at desc;
+
+CREATE OR REPLACE FUNCTION set_attendance_updated()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Only update timestamp if number_children actually changed
+  IF NEW.number_children IS DISTINCT FROM OLD.number_children THEN
+    NEW.attendance_updated = now();
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_set_attendance_updated
+BEFORE UPDATE ON ecdc_list
+FOR EACH ROW
+EXECUTE FUNCTION set_attendance_updated();

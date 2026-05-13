@@ -1,6 +1,6 @@
 // src/features/ecdcMap/index.tsx
 
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { MapContainer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -50,6 +50,7 @@ export default function ECDCMap() {
   const [selectMode,      setSelectMode]      = useState(false);
   const [selectedIds,     setSelectedIds]     = useState<Set<string>>(new Set());
   const [reportOpen,      setReportOpen]      = useState(false);
+  const [viewSelectedOnly, setViewSelectedOnly] = useState(false);
 
   // ── Data ────────────────────────────────────────────────────────────────────
   const { data: ecdcs    = [], isLoading: ecdcsLoading    } = useEcdcsWithPractitioners();
@@ -73,6 +74,22 @@ export default function ECDCMap() {
 
   const drawerBodyRef = useRef<HTMLDivElement>(null);
 
+  // ── URL Query Parsing ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ecdcsParam = params.get('ecdcs');
+
+    if (ecdcsParam) {
+      const ids = ecdcsParam.split(',');
+      setSelectedIds(new Set(ids));
+      setSelectMode(true);
+      setListVisible(true);
+      setViewSelectedOnly(true);
+      
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   // ── Legend groups (sidebar footer) ──────────────────────────────────────────
   const legendGroups = useMemo(() => {
     const seen = new Set<string>();
@@ -92,6 +109,8 @@ export default function ECDCMap() {
     const now = new Date();
 
     return ecdcs.filter((e) => {
+      if (viewSelectedOnly && !selectedIds.has(e.id)) return false;
+
       const matchesSearch =
         !q ||
         e.name?.toLowerCase().includes(q) ||
@@ -122,7 +141,7 @@ export default function ECDCMap() {
 
       return matchesSearch && matchesTraining && matchesVisit;
     });
-  }, [ecdcs, search, activeFilters, filterMode, trainingStatus, visitPreset, lastVisitMap]);
+  }, [ecdcs, search, activeFilters, filterMode, trainingStatus, visitPreset, lastVisitMap, viewSelectedOnly, selectedIds]);
 
   // ── Selected ECDCs for report ────────────────────────────────────────────────
   const selectedEcdcs = useMemo(
@@ -141,6 +160,7 @@ export default function ECDCMap() {
       setSelectedIds((prev) => {
         const next = new Set(prev);
         next.has(ecdc.id) ? next.delete(ecdc.id) : next.add(ecdc.id);
+        if (next.size === 0) setViewSelectedOnly(false);
         return next;
       });
     } else {
@@ -152,6 +172,7 @@ export default function ECDCMap() {
     setSelectedIds(prev => {
       const next = new Set(prev);
       next.delete(id);
+      if (next.size === 0) setViewSelectedOnly(false);
       return next;
     });
   };
@@ -162,6 +183,7 @@ export default function ECDCMap() {
         // turning off — clear selections and close report
         setSelectedIds(new Set());
         setReportOpen(false);
+        setViewSelectedOnly(false);
       } else {
         // turning on — close detail card, open list
         setSelected(null);
@@ -172,7 +194,10 @@ export default function ECDCMap() {
   };
 
   const selectAll = () => setSelectedIds(new Set(filtered.map((e) => e.id)));
-  const clearAll  = () => setSelectedIds(new Set());
+  const clearAll  = () => {
+    setSelectedIds(new Set());
+    setViewSelectedOnly(false);
+  };
 
   const getTrainingTags = (training: Record<string, boolean> | null) => {
     if (!training) return [];
@@ -182,6 +207,20 @@ export default function ECDCMap() {
   const getMissingTrainingTags = (training: Record<string, boolean> | null) => {
     if (!training) return TRAINING_FILTERS.map((f) => f.label);
     return TRAINING_FILTERS.filter((f) => training[f.key] !== true).map((f) => f.label);
+  };
+
+  const handleViewPractitioners = () => {
+    const pracIds = selectedEcdcs
+      .flatMap(e => e.practitioners?.map(p => p.id) || [])
+      .filter(Boolean);
+      
+    const uniquePracIds = Array.from(new Set(pracIds));
+    
+    if (uniquePracIds.length > 0) {
+      window.location.href = `/practitioners?practitioners=${uniquePracIds.join(',')}`;
+    } else {
+      alert("No practitioners found for the selected centres.");
+    }
   };
 
   // ── Sidebar legend footer ────────────────────────────────────────────────────
@@ -455,30 +494,53 @@ export default function ECDCMap() {
 
           {/* ── Select-mode toolbar ── */}
           {selectMode && listVisible && (
-            <div className="ecdc-select-toolbar">
-              <span className="ecdc-select-toolbar__count">
-                {selectedIds.size} selected
-              </span>
-              <div className="ecdc-select-toolbar__actions">
-                <button className="ecdc-select-toolbar__btn" onClick={selectAll}>All</button>
-                <button className="ecdc-select-toolbar__btn" onClick={clearAll}>None</button>
-                {selectedIds.size > 0 && (
-                  <button
-                    className="ecdc-select-toolbar__btn ecdc-select-toolbar__btn--primary"
-                    onClick={() => setReportOpen(true)}
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="16" y1="13" x2="8" y2="13" />
-                      <line x1="16" y1="17" x2="8" y2="17" />
-                    </svg>
-                    View
-                  </button>
-                )}
-              </div>
+  <>
+    {/* Box 1: Selection controls */}
+    <div className="ecdc-select-toolbar">
+      <span className="ecdc-select-toolbar__count">
+        {selectedIds.size} selected
+      </span>
+      <div className="ecdc-select-toolbar__actions">
+        <button className="ecdc-select-toolbar__btn" onClick={selectAll}>All</button>
+        <button className="ecdc-select-toolbar__btn" onClick={clearAll}>None</button>
+      </div>
+    </div>
+
+    {/* Box 2: Actions for selected items */}
+        {selectedIds.size > 0 && (
+          <div className="ecdc-select-toolbar">
+            <div className="ecdc-select-toolbar__actions">
+              <button
+                className={`ecdc-select-toolbar__btn ${viewSelectedOnly ? 'ecdc-select-toolbar__btn--primary' : ''}`}
+                onClick={() => setViewSelectedOnly(v => !v)}
+                title="Toggle showing only selected centres"
+              >
+                {viewSelectedOnly ? "Show all" : "Selected only"}
+              </button>
+              <button
+                className="ecdc-select-toolbar__btn"
+                onClick={handleViewPractitioners}
+                title="View practitioners for selected centres"
+              >
+                Practitioners
+              </button>
+              <button
+                className="ecdc-select-toolbar__btn"
+                onClick={() => setReportOpen(true)}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+                Export
+              </button>
             </div>
-          )}
+          </div>
+        )}
+      </>
+    )}
 
           {/* Scrollable ECDC list */}
           <div className={`ecdc-list${listVisible ? '' : ' ecdc-list--hidden'}`}>

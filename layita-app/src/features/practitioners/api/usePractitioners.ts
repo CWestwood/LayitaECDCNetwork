@@ -9,8 +9,8 @@ export function usePractitioners() {
       const { data, error } = await supabase
         .from('practitioners')
         .select(`
-          id, name, contact_number1, contact_number2, has_whatsapp,
-          ecdc:ecdc_id (name, area, chief, headman, number_children),
+          id, name, contact_number1, contact_number2, has_whatsapp, status,
+          ecdc:ecdc_id (id, name, area, chief, headman, number_children, attendance_updated, created_at),
           group:group_id (group_name),
           dsd_funded, dsd_registered,
           training ( smart_start_ever, first_aid_ever, level4_ever, level5_ever, wordworks03_ever, wordworks35_ever, littlestars_ever, other )
