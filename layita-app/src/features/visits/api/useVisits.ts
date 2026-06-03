@@ -31,6 +31,7 @@ const fetchVisits = async (): Promise<VisitRow[]> => {
       children_books, books_per_child, books_to_practitioner, 
       comments
     `)
+    .is('deleted_at', null)
     .order('date', { ascending: false });
 
   if (error) throw new Error(error.message);

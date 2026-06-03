@@ -15,6 +15,7 @@ export function usePractitioners() {
           dsd_funded, dsd_registered,
           training ( smart_start_ever, first_aid_ever, level4_ever, level5_ever, wordworks03_ever, wordworks35_ever, littlestars_ever, other )
         `)
+        .is('deleted_at', null)
         .order('name');
       if (error) throw error;
       return data;
@@ -31,6 +32,7 @@ export function useGlobalVisitStats() {
       const { data, error } = await supabase
         .from('outreach_visits')
         .select('practitioner_id, date, outreach_type')
+        .is('deleted_at', null)
         .neq('outreach_type', 'update') 
         .order('date', { ascending: false });
       if (error) throw error;

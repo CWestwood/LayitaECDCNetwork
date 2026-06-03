@@ -17,13 +17,6 @@ COMMENT ON SCHEMA "public" IS 'standard public schema';
 
 
 
-CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
-
-
-
-
-
-
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
 
 
@@ -107,8 +100,7 @@ ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."log_table_updates"() RETURNS "trigger"
     LANGUAGE "plpgsql"
-    AS $$
-DECLARE
+    AS $$DECLARE
   old_json jsonb;
   new_json jsonb;
   diff_json jsonb := '{}'::jsonb;
@@ -134,13 +126,12 @@ BEGIN
 
   -- Only insert a log if something actually changed
   IF diff_json != '{}'::jsonb THEN
-    INSERT INTO public.audit_logs (table_name, record_id, changed_fields)
-    VALUES (TG_TABLE_NAME, NEW.id, diff_json);
+    INSERT INTO public.audit_logs (table_name, record_id, changed_fields, changed_by_id)
+    VALUES (TG_TABLE_NAME, NEW.id, diff_json, auth.uid());
   END IF;
 
   RETURN NEW;
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."log_table_updates"() OWNER TO "postgres";
@@ -158,6 +149,37 @@ $$;
 
 
 ALTER FUNCTION "public"."merge_practitioners"("keep_id" "uuid", "discard_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."refresh_dashboard_views"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+    -- CONCURRENTLY allows the view to be read by the frontend while it's updating
+    REFRESH MATERIALIZED VIEW CONCURRENTLY public.outreach_summary_stats;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY public.ecdc_target_tracking;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."refresh_dashboard_views"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_attendance_updated"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  -- Only update timestamp if number_children actually changed
+  IF NEW.number_children IS DISTINCT FROM OLD.number_children THEN
+    NEW.attendance_updated = now();
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."set_attendance_updated"() OWNER TO "postgres";
 
 SET default_tablespace = '';
 
@@ -180,7 +202,8 @@ CREATE TABLE IF NOT EXISTS "public"."audit_logs" (
     "table_name" "text" NOT NULL,
     "record_id" "uuid" NOT NULL,
     "changed_fields" "jsonb" NOT NULL,
-    "changed_at" timestamp with time zone DEFAULT "now"()
+    "changed_at" timestamp with time zone DEFAULT "now"(),
+    "changed_by_id" "uuid"
 );
 
 
@@ -198,7 +221,8 @@ CREATE TABLE IF NOT EXISTS "public"."ecdc_list" (
     "area_id" "uuid" DEFAULT '6b785fc8-b0b5-4141-9255-249a39251c8a'::"uuid",
     "chief" "text",
     "headman" "text",
-    "number_children" "text"
+    "number_children" "text",
+    "attendance_updated" timestamp with time zone
 );
 
 
@@ -221,6 +245,10 @@ COMMENT ON COLUMN "public"."ecdc_list"."number_children" IS 'Number of children 
 
 
 
+COMMENT ON COLUMN "public"."ecdc_list"."attendance_updated" IS 'When was attendance last updated';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."groups" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -231,6 +259,80 @@ CREATE TABLE IF NOT EXISTS "public"."groups" (
 
 
 ALTER TABLE "public"."groups" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."practitioners" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "name" "text",
+    "contact_number1" "text",
+    "contact_number2" "text",
+    "ecdc_id" "uuid",
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "group_id" "uuid",
+    "dsd_funded" boolean,
+    "dsd_registered" boolean,
+    "has_whatsapp" boolean,
+    "group" "text",
+    "status" "text",
+    CONSTRAINT "practitioners_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'inactive'::"text", 'interested'::"text"])))
+);
+
+
+ALTER TABLE "public"."practitioners" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."practitioners"."dsd_funded" IS 'Does this practitioner received DSD funding';
+
+
+
+COMMENT ON COLUMN "public"."practitioners"."dsd_registered" IS 'Is this practitioner registered with the department of social development?';
+
+
+
+COMMENT ON COLUMN "public"."practitioners"."status" IS 'current status';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."profiles" (
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "name" "text",
+    "role" "text",
+    "email" "text",
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    CONSTRAINT "users_role_check" CHECK (("role" = ANY (ARRAY['administrator'::"text", 'library'::"text", 'manager'::"text", 'datacapturer'::"text"])))
+);
+
+
+ALTER TABLE "public"."profiles" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."profiles" IS 'Tracks users and their credentials';
+
+
+
+CREATE OR REPLACE VIEW "public"."human_audit_logs" AS
+ SELECT "a"."id",
+    "a"."table_name",
+    "a"."record_id",
+    "p"."name" AS "changed_by_name",
+    "field"."key" AS "field_name",
+    ("field"."value" ->> 'old'::"text") AS "old_val",
+    ("field"."value" ->> 'new'::"text") AS "new_val",
+    "a"."changed_at",
+        CASE "a"."table_name"
+            WHEN 'practitioners'::"text" THEN "prac"."name"
+            WHEN 'ecdc_list'::"text" THEN "ecdc"."name"
+            ELSE NULL::"text"
+        END AS "record_name"
+   FROM ((("public"."audit_logs" "a"
+     LEFT JOIN "public"."profiles" "p" ON (("a"."changed_by_id" = "p"."id")))
+     LEFT JOIN "public"."practitioners" "prac" ON ((("a"."table_name" = 'practitioners'::"text") AND ("a"."record_id" = "prac"."id"))))
+     LEFT JOIN "public"."ecdc_list" "ecdc" ON ((("a"."table_name" = 'ecdc_list'::"text") AND ("a"."record_id" = "ecdc"."id")))),
+    LATERAL "jsonb_each"("a"."changed_fields") "field"("key", "value");
+
+
+ALTER VIEW "public"."human_audit_logs" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."kobo_label" (
@@ -248,9 +350,10 @@ ALTER TABLE "public"."kobo_label" OWNER TO "postgres";
 CREATE TABLE IF NOT EXISTS "public"."kobo_processed" (
     "instance_id" "text" NOT NULL,
     "processed_at" timestamp with time zone DEFAULT "now"(),
-    "kobo_processed" "text" DEFAULT 'success'::"text",
+    "status" "text" DEFAULT 'success'::"text",
     "error_message" "text",
-    "warnings" "text"
+    "warnings" "text",
+    CONSTRAINT "kobo_processed_status_check" CHECK (("status" = ANY (ARRAY['success'::"text", 'failed'::"text", 'partial'::"text"])))
 );
 
 
@@ -267,6 +370,37 @@ CREATE TABLE IF NOT EXISTS "public"."kobo_raw_submissions" (
 ALTER TABLE "public"."kobo_raw_submissions" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."kobo_submission_monitor" AS
+ SELECT "r"."instance_id",
+    "r"."submitted_at",
+    "p"."processed_at",
+    "p"."status",
+    "p"."error_message",
+    "p"."warnings",
+    ("r"."payload" ->> 'data_capturer'::"text") AS "data_capturer",
+    ("r"."payload" ->> 'ecdc_name_text'::"text") AS "ecdc_name",
+    COALESCE(
+        CASE
+            WHEN (("r"."payload" ->> 'ecdc_practitioner'::"text") = 'none'::"text") THEN NULLIF(("r"."payload" ->> 'ecdc_practitioner_new'::"text"), ''::"text")
+            ELSE NULL::"text"
+        END, "prac"."name", NULLIF(("r"."payload" ->> 'ecdc_practitioner'::"text"), ''::"text"), 'Unknown'::"text") AS "practitioner_name",
+    ("r"."payload" ->> 'outreach_date'::"text") AS "outreach_date",
+    ("r"."payload" ->> 'outreach_type'::"text") AS "outreach_type",
+        CASE
+            WHEN ("p"."instance_id" IS NULL) THEN 'pending'::"text"
+            ELSE "p"."status"
+        END AS "processing_state",
+    (EXTRACT(epoch FROM ("p"."processed_at" - "r"."submitted_at")))::integer AS "processing_seconds",
+    "r"."payload"
+   FROM (("public"."kobo_raw_submissions" "r"
+     LEFT JOIN "public"."kobo_processed" "p" ON (("r"."instance_id" = "p"."instance_id")))
+     LEFT JOIN "public"."practitioners" "prac" ON (((("r"."payload" ->> 'ecdc_practitioner'::"text") = ("prac"."id")::"text") OR (("r"."payload" ->> 'ecdc_practitioner'::"text") = "replace"(("prac"."id")::"text", '-'::"text", ''::"text")) OR (("r"."payload" ->> 'ecdc_practitioner'::"text") = "md5"(("prac"."id")::"text")))))
+  ORDER BY "r"."submitted_at" DESC;
+
+
+ALTER VIEW "public"."kobo_submission_monitor" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."kobo_unmatched" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "instance_id" "text",
@@ -274,38 +408,12 @@ CREATE TABLE IF NOT EXISTS "public"."kobo_unmatched" (
     "raw_value" "text",
     "resolved_id" "uuid",
     "resolved_at" timestamp with time zone,
-    "created_at" timestamp with time zone DEFAULT "now"()
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "resolved_by" "uuid"
 );
 
 
 ALTER TABLE "public"."kobo_unmatched" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."practitioners" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "name" "text",
-    "contact_number1" "text",
-    "contact_number2" "text",
-    "ecdc_id" "uuid",
-    "updated_at" timestamp with time zone DEFAULT "now"(),
-    "group_id" "uuid",
-    "dsd_funded" boolean,
-    "dsd_registered" boolean,
-    "has_whatsapp" boolean,
-    "group" "text"
-);
-
-
-ALTER TABLE "public"."practitioners" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."practitioners"."dsd_funded" IS 'Does this practitioner received DSD funding';
-
-
-
-COMMENT ON COLUMN "public"."practitioners"."dsd_registered" IS 'Is this practitioner registered with the department of social development?';
-
 
 
 CREATE OR REPLACE VIEW "public"."kobotoolbox_ecdc_export" AS
@@ -373,7 +481,8 @@ ALTER TABLE "public"."landmarks" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS I
 CREATE TABLE IF NOT EXISTS "public"."layita_staff" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "name" "text" NOT NULL
+    "name" "text" NOT NULL,
+    "role" "text" DEFAULT 'Data Capturer'::"text"
 );
 
 
@@ -401,6 +510,7 @@ CREATE TABLE IF NOT EXISTS "public"."outreach_visits" (
     "parents_enrolled" numeric,
     "kobo_instance_id" "text",
     "source" "text" DEFAULT 'kobo'::"text",
+    "people_reached" numeric,
     CONSTRAINT "outreach_visits_source_check" CHECK (("source" = ANY (ARRAY['kobo'::"text", 'manual'::"text", 'manual_edit'::"text"]))),
     CONSTRAINT "outreach_visits_transport_cost_check" CHECK (("transport_cost" >= (0)::numeric)),
     CONSTRAINT "outreach_visits_transport_km_check" CHECK (("transport_km" >= (0)::numeric))
@@ -410,21 +520,21 @@ CREATE TABLE IF NOT EXISTS "public"."outreach_visits" (
 ALTER TABLE "public"."outreach_visits" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."profiles" (
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "name" "text",
-    "role" "text",
-    "email" "text",
+CREATE TABLE IF NOT EXISTS "public"."planned_visits" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    CONSTRAINT "users_role_check" CHECK (("role" = ANY (ARRAY['administrator'::"text", 'library'::"text", 'manager'::"text", 'datacapturer'::"text"])))
+    "practitioner_name" "text" NOT NULL,
+    "practitioner_id" "uuid" NOT NULL,
+    "scheduled_date" "date" NOT NULL,
+    "outreach_type" "text" NOT NULL,
+    "assigned_to" "uuid" NOT NULL,
+    "status" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "planned_visits_status_check" CHECK (("status" = ANY (ARRAY['planned'::"text", 'completed'::"text", 'cancelled'::"text"])))
 );
 
 
-ALTER TABLE "public"."profiles" OWNER TO "postgres";
-
-
-COMMENT ON TABLE "public"."profiles" IS 'Tracks users and their credentials';
-
+ALTER TABLE "public"."planned_visits" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."training" (
@@ -529,7 +639,17 @@ ALTER TABLE ONLY "public"."layita_staff"
 
 
 ALTER TABLE ONLY "public"."outreach_visits"
+    ADD CONSTRAINT "outreach_visits_kobo_instance_id_key" UNIQUE ("kobo_instance_id");
+
+
+
+ALTER TABLE ONLY "public"."outreach_visits"
     ADD CONSTRAINT "outreach_visits_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."planned_visits"
+    ADD CONSTRAINT "planned_visits_pkey" PRIMARY KEY ("id");
 
 
 
@@ -563,6 +683,14 @@ ALTER TABLE ONLY "public"."visit_requirements"
 
 
 
+CREATE INDEX "audit_logs_changed_at_idx" ON "public"."audit_logs" USING "btree" ("changed_at" DESC);
+
+
+
+CREATE INDEX "audit_logs_changed_by_idx" ON "public"."audit_logs" USING "btree" ("changed_by_id");
+
+
+
 CREATE INDEX "audit_logs_record_id_idx" ON "public"."audit_logs" USING "btree" ("record_id");
 
 
@@ -575,6 +703,10 @@ CREATE INDEX "kobo_choices_list_name_idx" ON "public"."kobo_label" USING "btree"
 
 
 
+CREATE INDEX "kobo_processed_status_idx" ON "public"."kobo_processed" USING "btree" ("status") WHERE ("status" = ANY (ARRAY['failed'::"text", 'partial'::"text"]));
+
+
+
 CREATE UNIQUE INDEX "practitioner_unique" ON "public"."practitioners" USING "btree" ("lower"("name"), "ecdc_id");
 
 
@@ -583,7 +715,24 @@ CREATE OR REPLACE TRIGGER "ecdc_audit_trigger" AFTER UPDATE ON "public"."ecdc_li
 
 
 
+CREATE OR REPLACE TRIGGER "outreach_audit_trigger" AFTER UPDATE ON "public"."outreach_visits" FOR EACH ROW EXECUTE FUNCTION "public"."log_table_updates"();
+
+
+
+CREATE OR REPLACE TRIGGER "planning_audit_trigger" AFTER UPDATE ON "public"."planned_visits" FOR EACH ROW EXECUTE FUNCTION "public"."log_table_updates"();
+
+
+
 CREATE OR REPLACE TRIGGER "practitioner_audit_trigger" AFTER UPDATE ON "public"."practitioners" FOR EACH ROW EXECUTE FUNCTION "public"."log_table_updates"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_set_attendance_updated" BEFORE UPDATE ON "public"."ecdc_list" FOR EACH ROW EXECUTE FUNCTION "public"."set_attendance_updated"();
+
+
+
+ALTER TABLE ONLY "public"."audit_logs"
+    ADD CONSTRAINT "audit_logs_changed_by_id_fkey" FOREIGN KEY ("changed_by_id") REFERENCES "public"."profiles"("id") ON UPDATE RESTRICT ON DELETE RESTRICT;
 
 
 
@@ -602,6 +751,11 @@ ALTER TABLE ONLY "public"."kobo_unmatched"
 
 
 
+ALTER TABLE ONLY "public"."kobo_unmatched"
+    ADD CONSTRAINT "kobo_unmatched_resolved_by_fkey" FOREIGN KEY ("resolved_by") REFERENCES "public"."profiles"("id") ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."outreach_visits"
     ADD CONSTRAINT "outreach_visits_data_capturer_id_fkey" FOREIGN KEY ("data_capturer_id") REFERENCES "public"."layita_staff"("id") ON UPDATE CASCADE ON DELETE RESTRICT;
 
@@ -614,6 +768,16 @@ ALTER TABLE ONLY "public"."outreach_visits"
 
 ALTER TABLE ONLY "public"."outreach_visits"
     ADD CONSTRAINT "outreach_visits_practitioner_id_fkey" FOREIGN KEY ("practitioner_id") REFERENCES "public"."practitioners"("id") ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."planned_visits"
+    ADD CONSTRAINT "planned_visits_assigned_to_fkey" FOREIGN KEY ("assigned_to") REFERENCES "public"."layita_staff"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."planned_visits"
+    ADD CONSTRAINT "planned_visits_practitioner_id_fkey" FOREIGN KEY ("practitioner_id") REFERENCES "public"."practitioners"("id") ON DELETE RESTRICT;
 
 
 
@@ -642,137 +806,220 @@ ALTER TABLE ONLY "public"."visit_requirements"
 
 
 
-CREATE POLICY "administrators can edit groups" ON "public"."groups" AS RESTRICTIVE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text")))));
+CREATE POLICY "Allow administrators full access to planned visits" ON "public"."planned_visits" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
 
 
 
-CREATE POLICY "administrators can edit kobo_labels" ON "public"."kobo_label" AS RESTRICTIVE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text")))));
+CREATE POLICY "Allow administrators to add logs to audit_logs" ON "public"."audit_logs" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
 
 
 
-CREATE POLICY "administrators can edit layita staff" ON "public"."layita_staff" AS RESTRICTIVE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text")))));
-
-
-
-CREATE POLICY "administrators can edit outreach visit data" ON "public"."outreach_visits" AS RESTRICTIVE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text")))));
-
-
-
-CREATE POLICY "administrators can edit profiles data" ON "public"."profiles" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
-
-
-
-CREATE POLICY "administrators can edit visit requirements" ON "public"."visit_requirements" AS RESTRICTIVE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text")))));
-
-
-
-CREATE POLICY "administrators can manage ecdc data" ON "public"."ecdc_list" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
-
-
-
-CREATE POLICY "administrators can manage practitioners" ON "public"."practitioners" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
-
-
-
-CREATE POLICY "administrators can view and edit data" ON "public"."practitioners" TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text")))));
-
-
-
-CREATE POLICY "admins can edit and delete areas" ON "public"."area" AS RESTRICTIVE TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM "public"."profiles"
-  WHERE (("profiles"."id" = "auth"."uid"()) AND ("profiles"."role" = 'administrator'::"text")))));
+CREATE POLICY "Allow authenticated users to view all planned visits" ON "public"."planned_visits" FOR SELECT TO "authenticated" USING (true);
 
 
 
 ALTER TABLE "public"."area" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "authenticated can view landmarks" ON "public"."landmarks" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "area: administrator write" ON "public"."area" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
 
 
 
-CREATE POLICY "authenticated can view training" ON "public"."training" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "area: authenticated read" ON "public"."area" FOR SELECT TO "authenticated" USING (true);
 
 
 
-CREATE POLICY "authenticated users can read areas" ON "public"."area" FOR SELECT TO "authenticated" USING (true);
+ALTER TABLE "public"."audit_logs" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "audit_logs: admin/manager read human view" ON "public"."audit_logs" FOR SELECT TO "authenticated" USING (("public"."get_my_role"() = ANY (ARRAY['administrator'::"text", 'manager'::"text"])));
 
 
 
-CREATE POLICY "authenticated users can read ecdcs" ON "public"."ecdc_list" FOR SELECT TO "authenticated" USING (true);
-
-
-
-CREATE POLICY "authenticated users can read groups" ON "public"."groups" FOR SELECT TO "authenticated" USING (true);
-
-
-
-CREATE POLICY "authenticated users can read outreach_visits" ON "public"."outreach_visits" FOR SELECT TO "authenticated" USING (true);
-
-
-
-CREATE POLICY "authenticated users can view visits" ON "public"."practitioners" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "audit_logs: administrator read" ON "public"."audit_logs" FOR SELECT TO "authenticated" USING (("public"."get_my_role"() = ANY (ARRAY['administrator'::"text", 'manager'::"text"])));
 
 
 
 ALTER TABLE "public"."ecdc_list" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "ecdc_list: administrator write" ON "public"."ecdc_list" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "ecdc_list: authenticated read" ON "public"."ecdc_list" FOR SELECT TO "authenticated" USING (true);
+
+
+
 ALTER TABLE "public"."groups" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "groups: administrator write" ON "public"."groups" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "groups: authenticated read" ON "public"."groups" FOR SELECT TO "authenticated" USING (true);
+
 
 
 ALTER TABLE "public"."kobo_label" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "kobo_label: administrator write" ON "public"."kobo_label" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "kobo_label: authenticated read" ON "public"."kobo_label" FOR SELECT TO "authenticated" USING (true);
+
+
+
+ALTER TABLE "public"."kobo_processed" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "kobo_processed: admin/manager read" ON "public"."kobo_processed" FOR SELECT TO "authenticated" USING (("public"."get_my_role"() = ANY (ARRAY['administrator'::"text", 'manager'::"text"])));
+
+
+
+CREATE POLICY "kobo_processed: administrator update" ON "public"."kobo_processed" FOR UPDATE TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+ALTER TABLE "public"."kobo_raw_submissions" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "kobo_raw_submissions: administrator read" ON "public"."kobo_raw_submissions" FOR SELECT TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+ALTER TABLE "public"."kobo_unmatched" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "kobo_unmatched: admin/manager read" ON "public"."kobo_unmatched" FOR SELECT TO "authenticated" USING (("public"."get_my_role"() = ANY (ARRAY['administrator'::"text", 'manager'::"text"])));
+
+
+
+CREATE POLICY "kobo_unmatched: administrator delete" ON "public"."kobo_unmatched" FOR DELETE TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "kobo_unmatched: administrator resolve" ON "public"."kobo_unmatched" FOR UPDATE TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
 ALTER TABLE "public"."landmarks" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "landmarks: administrator write" ON "public"."landmarks" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "landmarks: authenticated read" ON "public"."landmarks" FOR SELECT TO "authenticated" USING (true);
+
 
 
 ALTER TABLE "public"."layita_staff" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "layita_staff: administrator write" ON "public"."layita_staff" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "layita_staff: authenticated read" ON "public"."layita_staff" FOR SELECT TO "authenticated" USING (true);
+
+
+
 ALTER TABLE "public"."outreach_visits" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "outreach_visits: administrator write" ON "public"."outreach_visits" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "outreach_visits: authenticated read" ON "public"."outreach_visits" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "outreach_visits: datacapturer insert" ON "public"."outreach_visits" FOR INSERT TO "authenticated" WITH CHECK ((("public"."get_my_role"() = 'datacapturer'::"text") AND ("data_capturer_id" = ( SELECT "ls"."id"
+   FROM ("public"."layita_staff" "ls"
+     JOIN "public"."profiles" "p" ON (("lower"("p"."name") = "lower"("ls"."name"))))
+  WHERE ("p"."id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "outreach_visits: datacapturer update own" ON "public"."outreach_visits" FOR UPDATE TO "authenticated" USING ((("public"."get_my_role"() = 'datacapturer'::"text") AND ("data_capturer_id" = ( SELECT "ls"."id"
+   FROM ("public"."layita_staff" "ls"
+     JOIN "public"."profiles" "p" ON (("lower"("p"."name") = "lower"("ls"."name"))))
+  WHERE ("p"."id" = "auth"."uid"()))) AND ("source" <> 'kobo'::"text"))) WITH CHECK (("public"."get_my_role"() = 'datacapturer'::"text"));
+
+
+
+CREATE POLICY "outreach_visits: manager update" ON "public"."outreach_visits" FOR UPDATE TO "authenticated" USING (("public"."get_my_role"() = 'manager'::"text")) WITH CHECK (("public"."get_my_role"() = 'manager'::"text"));
+
+
+
+ALTER TABLE "public"."planned_visits" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."practitioners" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "practitioners: administrator write" ON "public"."practitioners" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "practitioners: authenticated read" ON "public"."practitioners" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "practitioners: manager update" ON "public"."practitioners" FOR UPDATE TO "authenticated" USING (("public"."get_my_role"() = 'manager'::"text")) WITH CHECK (("public"."get_my_role"() = 'manager'::"text"));
+
+
+
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "profiles: administrator read all" ON "public"."profiles" FOR SELECT TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "profiles: administrator write" ON "public"."profiles" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "profiles: read own" ON "public"."profiles" FOR SELECT TO "authenticated" USING (("id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "profiles: user update own non-role fields" ON "public"."profiles" FOR UPDATE TO "authenticated" USING (("id" = "auth"."uid"())) WITH CHECK ((("id" = "auth"."uid"()) AND ("role" = ( SELECT "profiles_1"."role"
+   FROM "public"."profiles" "profiles_1"
+  WHERE ("profiles_1"."id" = "auth"."uid"())))));
+
 
 
 ALTER TABLE "public"."training" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "users can read own profile" ON "public"."profiles" FOR SELECT TO "authenticated" USING (("id" = "auth"."uid"()));
+CREATE POLICY "training: administrator write" ON "public"."training" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "training: authenticated read" ON "public"."training" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "training: manager update" ON "public"."training" FOR UPDATE TO "authenticated" USING (("public"."get_my_role"() = 'manager'::"text")) WITH CHECK (("public"."get_my_role"() = 'manager'::"text"));
 
 
 
 ALTER TABLE "public"."visit_requirements" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "visit_requirements: administrator write" ON "public"."visit_requirements" TO "authenticated" USING (("public"."get_my_role"() = 'administrator'::"text")) WITH CHECK (("public"."get_my_role"() = 'administrator'::"text"));
+
+
+
+CREATE POLICY "visit_requirements: authenticated read" ON "public"."visit_requirements" FOR SELECT TO "authenticated" USING (true);
+
 
 
 
@@ -1148,9 +1395,6 @@ GRANT ALL ON FUNCTION "public"."geometry"("text") TO "postgres";
 GRANT ALL ON FUNCTION "public"."geometry"("text") TO "anon";
 GRANT ALL ON FUNCTION "public"."geometry"("text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."geometry"("text") TO "service_role";
-
-
-
 
 
 
@@ -1756,7 +2000,6 @@ GRANT ALL ON FUNCTION "public"."equals"("geom1" "public"."geometry", "geom2" "pu
 
 
 
-GRANT ALL ON FUNCTION "public"."find_similar_practitioners"("search_name" "text") TO "anon";
 GRANT ALL ON FUNCTION "public"."find_similar_practitioners"("search_name" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."find_similar_practitioners"("search_name" "text") TO "service_role";
 
@@ -2448,7 +2691,6 @@ GRANT ALL ON FUNCTION "public"."geomfromewkt"("text") TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."get_my_role"() TO "anon";
 GRANT ALL ON FUNCTION "public"."get_my_role"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_my_role"() TO "service_role";
 
@@ -2587,7 +2829,6 @@ GRANT ALL ON FUNCTION "public"."gtrgm_union"("internal", "internal") TO "service
 
 
 
-GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "anon";
 GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
 
@@ -2642,7 +2883,6 @@ GRANT ALL ON FUNCTION "public"."lockrow"("text", "text", "text", "text", timesta
 
 
 
-GRANT ALL ON FUNCTION "public"."log_table_updates"() TO "anon";
 GRANT ALL ON FUNCTION "public"."log_table_updates"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."log_table_updates"() TO "service_role";
 
@@ -2655,9 +2895,8 @@ GRANT ALL ON FUNCTION "public"."longtransactionsenabled"() TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."merge_practitioners"("keep_id" "uuid", "discard_id" "uuid") TO "anon";
-GRANT ALL ON FUNCTION "public"."merge_practitioners"("keep_id" "uuid", "discard_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."merge_practitioners"("keep_id" "uuid", "discard_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."merge_practitioners"("keep_id" "uuid", "discard_id" "uuid") TO "authenticated";
 
 
 
@@ -3176,6 +3415,18 @@ GRANT ALL ON FUNCTION "public"."postgis_wagyu_version"() TO "postgres";
 GRANT ALL ON FUNCTION "public"."postgis_wagyu_version"() TO "anon";
 GRANT ALL ON FUNCTION "public"."postgis_wagyu_version"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."postgis_wagyu_version"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."refresh_dashboard_views"() TO "anon";
+GRANT ALL ON FUNCTION "public"."refresh_dashboard_views"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."refresh_dashboard_views"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."set_attendance_updated"() TO "anon";
+GRANT ALL ON FUNCTION "public"."set_attendance_updated"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_attendance_updated"() TO "service_role";
 
 
 
@@ -6407,109 +6658,109 @@ GRANT ALL ON FUNCTION "public"."st_union"("public"."geometry", double precision)
 
 
 
-GRANT ALL ON TABLE "public"."area" TO "anon";
 GRANT ALL ON TABLE "public"."area" TO "authenticated";
 GRANT ALL ON TABLE "public"."area" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."audit_logs" TO "anon";
 GRANT ALL ON TABLE "public"."audit_logs" TO "authenticated";
 GRANT ALL ON TABLE "public"."audit_logs" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."ecdc_list" TO "anon";
 GRANT ALL ON TABLE "public"."ecdc_list" TO "authenticated";
 GRANT ALL ON TABLE "public"."ecdc_list" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."groups" TO "anon";
 GRANT ALL ON TABLE "public"."groups" TO "authenticated";
 GRANT ALL ON TABLE "public"."groups" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."kobo_label" TO "anon";
-GRANT ALL ON TABLE "public"."kobo_label" TO "authenticated";
-GRANT ALL ON TABLE "public"."kobo_label" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."kobo_processed" TO "anon";
-GRANT ALL ON TABLE "public"."kobo_processed" TO "authenticated";
-GRANT ALL ON TABLE "public"."kobo_processed" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."kobo_raw_submissions" TO "anon";
-GRANT ALL ON TABLE "public"."kobo_raw_submissions" TO "authenticated";
-GRANT ALL ON TABLE "public"."kobo_raw_submissions" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."kobo_unmatched" TO "anon";
-GRANT ALL ON TABLE "public"."kobo_unmatched" TO "authenticated";
-GRANT ALL ON TABLE "public"."kobo_unmatched" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."practitioners" TO "anon";
 GRANT ALL ON TABLE "public"."practitioners" TO "authenticated";
 GRANT ALL ON TABLE "public"."practitioners" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."kobotoolbox_ecdc_export" TO "anon";
-GRANT ALL ON TABLE "public"."kobotoolbox_ecdc_export" TO "authenticated";
-GRANT ALL ON TABLE "public"."kobotoolbox_ecdc_export" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."kobotoolbox_practitioners_export" TO "anon";
-GRANT ALL ON TABLE "public"."kobotoolbox_practitioners_export" TO "authenticated";
-GRANT ALL ON TABLE "public"."kobotoolbox_practitioners_export" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."landmarks" TO "anon";
-GRANT ALL ON TABLE "public"."landmarks" TO "authenticated";
-GRANT ALL ON TABLE "public"."landmarks" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."landmarks_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."landmarks_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."landmarks_id_seq" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."layita_staff" TO "anon";
-GRANT ALL ON TABLE "public"."layita_staff" TO "authenticated";
-GRANT ALL ON TABLE "public"."layita_staff" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."outreach_visits" TO "anon";
-GRANT ALL ON TABLE "public"."outreach_visits" TO "authenticated";
-GRANT ALL ON TABLE "public"."outreach_visits" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."profiles" TO "anon";
 GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
 GRANT ALL ON TABLE "public"."profiles" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."training" TO "anon";
+GRANT ALL ON TABLE "public"."human_audit_logs" TO "anon";
+GRANT ALL ON TABLE "public"."human_audit_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."human_audit_logs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kobo_label" TO "authenticated";
+GRANT ALL ON TABLE "public"."kobo_label" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kobo_processed" TO "authenticated";
+GRANT ALL ON TABLE "public"."kobo_processed" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kobo_raw_submissions" TO "authenticated";
+GRANT ALL ON TABLE "public"."kobo_raw_submissions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kobo_submission_monitor" TO "anon";
+GRANT ALL ON TABLE "public"."kobo_submission_monitor" TO "authenticated";
+GRANT ALL ON TABLE "public"."kobo_submission_monitor" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kobo_unmatched" TO "authenticated";
+GRANT ALL ON TABLE "public"."kobo_unmatched" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kobotoolbox_ecdc_export" TO "authenticated";
+GRANT ALL ON TABLE "public"."kobotoolbox_ecdc_export" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."kobotoolbox_practitioners_export" TO "authenticated";
+GRANT ALL ON TABLE "public"."kobotoolbox_practitioners_export" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."landmarks" TO "authenticated";
+GRANT ALL ON TABLE "public"."landmarks" TO "service_role";
+
+
+
+GRANT ALL ON SEQUENCE "public"."landmarks_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."landmarks_id_seq" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."layita_staff" TO "authenticated";
+GRANT ALL ON TABLE "public"."layita_staff" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."outreach_visits" TO "authenticated";
+GRANT ALL ON TABLE "public"."outreach_visits" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."planned_visits" TO "anon";
+GRANT ALL ON TABLE "public"."planned_visits" TO "authenticated";
+GRANT ALL ON TABLE "public"."planned_visits" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."training" TO "authenticated";
 GRANT ALL ON TABLE "public"."training" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."visit_requirements" TO "anon";
 GRANT ALL ON TABLE "public"."visit_requirements" TO "authenticated";
 GRANT ALL ON TABLE "public"."visit_requirements" TO "service_role";
 
@@ -6574,5 +6825,220 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
+
+
+drop extension if exists "pg_net";
+
+revoke delete on table "public"."area" from "anon";
+
+revoke insert on table "public"."area" from "anon";
+
+revoke references on table "public"."area" from "anon";
+
+revoke select on table "public"."area" from "anon";
+
+revoke trigger on table "public"."area" from "anon";
+
+revoke truncate on table "public"."area" from "anon";
+
+revoke update on table "public"."area" from "anon";
+
+revoke delete on table "public"."audit_logs" from "anon";
+
+revoke insert on table "public"."audit_logs" from "anon";
+
+revoke references on table "public"."audit_logs" from "anon";
+
+revoke select on table "public"."audit_logs" from "anon";
+
+revoke trigger on table "public"."audit_logs" from "anon";
+
+revoke truncate on table "public"."audit_logs" from "anon";
+
+revoke update on table "public"."audit_logs" from "anon";
+
+revoke delete on table "public"."ecdc_list" from "anon";
+
+revoke insert on table "public"."ecdc_list" from "anon";
+
+revoke references on table "public"."ecdc_list" from "anon";
+
+revoke select on table "public"."ecdc_list" from "anon";
+
+revoke trigger on table "public"."ecdc_list" from "anon";
+
+revoke truncate on table "public"."ecdc_list" from "anon";
+
+revoke update on table "public"."ecdc_list" from "anon";
+
+revoke delete on table "public"."groups" from "anon";
+
+revoke insert on table "public"."groups" from "anon";
+
+revoke references on table "public"."groups" from "anon";
+
+revoke select on table "public"."groups" from "anon";
+
+revoke trigger on table "public"."groups" from "anon";
+
+revoke truncate on table "public"."groups" from "anon";
+
+revoke update on table "public"."groups" from "anon";
+
+revoke delete on table "public"."kobo_label" from "anon";
+
+revoke insert on table "public"."kobo_label" from "anon";
+
+revoke references on table "public"."kobo_label" from "anon";
+
+revoke select on table "public"."kobo_label" from "anon";
+
+revoke trigger on table "public"."kobo_label" from "anon";
+
+revoke truncate on table "public"."kobo_label" from "anon";
+
+revoke update on table "public"."kobo_label" from "anon";
+
+revoke delete on table "public"."kobo_processed" from "anon";
+
+revoke insert on table "public"."kobo_processed" from "anon";
+
+revoke references on table "public"."kobo_processed" from "anon";
+
+revoke select on table "public"."kobo_processed" from "anon";
+
+revoke trigger on table "public"."kobo_processed" from "anon";
+
+revoke truncate on table "public"."kobo_processed" from "anon";
+
+revoke update on table "public"."kobo_processed" from "anon";
+
+revoke delete on table "public"."kobo_raw_submissions" from "anon";
+
+revoke insert on table "public"."kobo_raw_submissions" from "anon";
+
+revoke references on table "public"."kobo_raw_submissions" from "anon";
+
+revoke select on table "public"."kobo_raw_submissions" from "anon";
+
+revoke trigger on table "public"."kobo_raw_submissions" from "anon";
+
+revoke truncate on table "public"."kobo_raw_submissions" from "anon";
+
+revoke update on table "public"."kobo_raw_submissions" from "anon";
+
+revoke delete on table "public"."kobo_unmatched" from "anon";
+
+revoke insert on table "public"."kobo_unmatched" from "anon";
+
+revoke references on table "public"."kobo_unmatched" from "anon";
+
+revoke select on table "public"."kobo_unmatched" from "anon";
+
+revoke trigger on table "public"."kobo_unmatched" from "anon";
+
+revoke truncate on table "public"."kobo_unmatched" from "anon";
+
+revoke update on table "public"."kobo_unmatched" from "anon";
+
+revoke delete on table "public"."landmarks" from "anon";
+
+revoke insert on table "public"."landmarks" from "anon";
+
+revoke references on table "public"."landmarks" from "anon";
+
+revoke select on table "public"."landmarks" from "anon";
+
+revoke trigger on table "public"."landmarks" from "anon";
+
+revoke truncate on table "public"."landmarks" from "anon";
+
+revoke update on table "public"."landmarks" from "anon";
+
+revoke delete on table "public"."layita_staff" from "anon";
+
+revoke insert on table "public"."layita_staff" from "anon";
+
+revoke references on table "public"."layita_staff" from "anon";
+
+revoke select on table "public"."layita_staff" from "anon";
+
+revoke trigger on table "public"."layita_staff" from "anon";
+
+revoke truncate on table "public"."layita_staff" from "anon";
+
+revoke update on table "public"."layita_staff" from "anon";
+
+revoke delete on table "public"."outreach_visits" from "anon";
+
+revoke insert on table "public"."outreach_visits" from "anon";
+
+revoke references on table "public"."outreach_visits" from "anon";
+
+revoke select on table "public"."outreach_visits" from "anon";
+
+revoke trigger on table "public"."outreach_visits" from "anon";
+
+revoke truncate on table "public"."outreach_visits" from "anon";
+
+revoke update on table "public"."outreach_visits" from "anon";
+
+revoke delete on table "public"."practitioners" from "anon";
+
+revoke insert on table "public"."practitioners" from "anon";
+
+revoke references on table "public"."practitioners" from "anon";
+
+revoke select on table "public"."practitioners" from "anon";
+
+revoke trigger on table "public"."practitioners" from "anon";
+
+revoke truncate on table "public"."practitioners" from "anon";
+
+revoke update on table "public"."practitioners" from "anon";
+
+revoke delete on table "public"."profiles" from "anon";
+
+revoke insert on table "public"."profiles" from "anon";
+
+revoke references on table "public"."profiles" from "anon";
+
+revoke select on table "public"."profiles" from "anon";
+
+revoke trigger on table "public"."profiles" from "anon";
+
+revoke truncate on table "public"."profiles" from "anon";
+
+revoke update on table "public"."profiles" from "anon";
+
+revoke delete on table "public"."training" from "anon";
+
+revoke insert on table "public"."training" from "anon";
+
+revoke references on table "public"."training" from "anon";
+
+revoke select on table "public"."training" from "anon";
+
+revoke trigger on table "public"."training" from "anon";
+
+revoke truncate on table "public"."training" from "anon";
+
+revoke update on table "public"."training" from "anon";
+
+revoke delete on table "public"."visit_requirements" from "anon";
+
+revoke insert on table "public"."visit_requirements" from "anon";
+
+revoke references on table "public"."visit_requirements" from "anon";
+
+revoke select on table "public"."visit_requirements" from "anon";
+
+revoke trigger on table "public"."visit_requirements" from "anon";
+
+revoke truncate on table "public"."visit_requirements" from "anon";
+
+revoke update on table "public"."visit_requirements" from "anon";
+
+CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 

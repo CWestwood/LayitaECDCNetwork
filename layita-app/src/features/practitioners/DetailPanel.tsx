@@ -5,7 +5,9 @@ import { resolveGroupColor } from "../../lib/Groupcolors";
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
 import { usePractitionerVisits } from "./api/usePractitioners";
 import { useAuditLogs } from "../layita/api/useAudit";
+import { useDeletePractitioner } from "./api/useDeletePractitioner";
 import { Practitioner } from "./types";
+import { AdminSoftDeleteButton } from "../layita/components/AdminSoftDeleteButton";
 import {
   fmtDate,
   daysSince,
@@ -72,6 +74,7 @@ export function DetailPanel({ p, onClose }: Props) {
     recordId:  p.id,
     tableName: "practitioners",
   });
+  const { mutate: deletePractitioner, isPending: deletePending } = useDeletePractitioner();
 
   const color         = resolveGroupColor(p.group?.group_name);
   const lastVisitDate = visits[0]?.date;
@@ -119,6 +122,11 @@ export function DetailPanel({ p, onClose }: Props) {
               </div>
             )}
           </div>
+          <AdminSoftDeleteButton 
+            onConfirm={() => deletePractitioner(p.id, { onSuccess: onClose })} 
+            isPending={deletePending} 
+            label="Delete" 
+          />
       <button className="p2-detail__editor" onClick={() => setEditing(true)}>
             <Icon d={Icons.pencil} size={14} />
           </button>

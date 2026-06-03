@@ -23,6 +23,7 @@ export function useUnmatched() {
       const { data, error } = await supabase
         .from('practitioners')
         .select('id, name, ecdc_list(name)')
+        .is('deleted_at', null)
         .order('name')
 
       if (error) throw error

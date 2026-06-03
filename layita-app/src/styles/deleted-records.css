@@ -1,0 +1,102 @@
+.la-deleted {
+  padding: 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.la-deleted__header {
+  margin-bottom: 24px;
+}
+
+.la-deleted__title {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #111827;
+}
+
+.la-deleted__subtitle {
+  color: #6b7280;
+}
+
+.la-deleted__tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 12px;
+}
+
+.la-deleted__tab {
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  color: #6b7280;
+  transition: background-color 0.2s;
+}
+
+.la-deleted__tab:hover {
+  background: #f3f4f6;
+}
+
+.la-deleted__tab--active {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.la-deleted__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.la-deleted__table th,
+.la-deleted__table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.la-deleted__table th {
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.la-deleted__actions,
+.la-deleted__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.la-deleted__confirm-label {
+  font-size: 14px;
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.la-deleted__btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.la-deleted__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.la-deleted__btn--danger {
+  border-color: #fca5a5;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.la-deleted__btn--danger:hover:not(:disabled) {
+  background: #fee2e2;
+}

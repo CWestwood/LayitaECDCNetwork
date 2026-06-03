@@ -1,0 +1,327 @@
+/* =============================================================================
+   dashboard.css — Dashboard page styles
+   Adheres to the practitioners.css aesthetic (colors, fonts, borders, shadows).
+============================================================================= */
+
+/* ── Page shell ────────────────────────────────────────────────────────────── */
+
+.da-page {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  background-color: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.da-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+/* ── Top bar ───────────────────────────────────────────────────────────────── */
+
+.da-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  height: 58px;
+  flex-shrink: 0;
+  background: var(--color-primary-tint-15);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.da-topbar__title {
+  margin: 0;
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Body layout ───────────────────────────────────────────────────────────── */
+
+.da-body {
+  padding: 24px 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Stats Grid ────────────────────────────────────────────────────────────── */
+
+.da-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.da-stat-card {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: default;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.da-stat-card:hover {
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.da-stat-card__label {
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+}
+
+.da-stat-card__value {
+  font-family: 'Raleway', sans-serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--color-primary-deep);
+  line-height: 1.1;
+}
+
+.da-stat-card__value--warning { color: var(--color-warning); }
+.da-stat-card__value--success { color: var(--color-success); }
+.da-stat-card__value--danger  { color: var(--color-danger);  }
+
+/* ── Sections ──────────────────────────────────────────────────────────────── */
+
+.da-section {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 24px;
+}
+
+.da-section__title {
+  margin: 0 0 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.70rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--color-primary-deep);
+}
+
+/* ── Chart Row / Type Bars ─────────────────────────────────────────────────── */
+
+.da-chart-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.da-type-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--color-bg-subtle);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  min-width: 180px;
+  flex: 1;
+}
+
+.da-type-bar__label {
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.76rem;
+  color: var(--color-text);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.da-type-bar__value {
+  font-family: 'Raleway', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-primary-deep);
+}
+
+/* ── Recent Visits List ────────────────────────────────────────────────────── */
+
+.da-recent-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.da-recent-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-bg-hover);
+  transition: background 0.1s;
+}
+
+.da-recent-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.da-recent-item:hover {
+  background: var(--color-bg-hover);
+  border-radius: 6px;
+  padding-left: 10px;
+  padding-right: 10px;
+  margin: 0 -10px;
+}
+
+.da-recent-item__left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.da-recent-item__type {
+  font-family: 'Raleway', sans-serif;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.da-recent-item__details {
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.70rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.da-recent-item__right {
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ── Loading / empty states ────────────────────────────────────────────────── */
+
+.da-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--color-primary-deep);
+  padding: 48px;
+}
+
+.da-error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.84rem;
+  color: var(--color-danger);
+  padding: 48px;
+}
+
+.da-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.84rem;
+  font-style: italic;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  .da-topbar {
+    padding: 0 16px;
+  }
+  
+  .da-body {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .da-page {
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .da-topbar {
+    height: auto;
+    min-height: 58px;
+    padding: 10px 14px;
+  }
+
+  .da-body {
+    padding: 16px;
+    gap: 16px;
+  }
+  
+  .da-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .da-stat-card {
+    padding: 16px;
+  }
+
+  .da-stat-card__value {
+    font-size: 1.4rem;
+  }
+  
+  .da-chart-row {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .da-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .da-stat-card__value {
+    font-size: 1.5rem;
+  }
+}

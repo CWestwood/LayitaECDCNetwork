@@ -10,6 +10,7 @@ import { themeColors } from '../../lib/layita_colors';
 
 import { useEcdcsWithPractitioners, EcdcWithPractitioners } from './api/useEcdcsWithPractitioners';
 import { useLandmarks } from './api/useLandmarks';
+import { useDeleteEcdc } from './api/useDeleteEcdc';
 import { useGlobalVisitStats } from '../practitioners/api/usePractitioners';
 
 import Sidebar from '../../layouts/Sidebar';
@@ -27,6 +28,7 @@ import {
   MapTileLayer,
   CloseIcon,
 } from './_components';
+import { AdminSoftDeleteButton } from '../layita/components/AdminSoftDeleteButton';
 
 import '../../styles/shared.css';
 import '../../styles/ecdcMap.css';
@@ -55,6 +57,7 @@ export default function ECDCMap() {
   // ── Data ────────────────────────────────────────────────────────────────────
   const { data: ecdcs    = [], isLoading: ecdcsLoading    } = useEcdcsWithPractitioners();
   const { data: landmarks = [], isLoading: landmarksLoading } = useLandmarks();
+  const { mutate: deleteEcdc, isPending: deleteEcdcPending } = useDeleteEcdc();
 
   const {
     data: globalVisits = [],
@@ -615,6 +618,14 @@ export default function ECDCMap() {
                     {dominantGroup}
                   </div>
                 )}
+              </div>
+
+              <div style={{ padding: '0 16px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+                <AdminSoftDeleteButton
+                  onConfirm={() => deleteEcdc(selected.id, { onSuccess: () => setSelected(null) })}
+                  isPending={deleteEcdcPending}
+                  label="Delete ECDC"
+                />
               </div>
 
               <div className="ecdc-practitioners-heading">Practitioners</div>

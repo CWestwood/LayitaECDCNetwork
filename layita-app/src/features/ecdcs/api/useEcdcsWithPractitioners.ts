@@ -26,6 +26,7 @@ export function useEcdcsWithPractitioners() {
             training ( ${TRAINING_FILTERS.map((f) => f.key).join(', ')} )
           )
         `)
+        .is('deleted_at', null)
         .not('latitude', 'is', null)
         .not('longitude', 'is', null)
         .order('name');

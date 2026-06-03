@@ -24,6 +24,7 @@ const fetchEcdcs = async (): Promise<EcdcRow[]> => {
       area:area_id (name),
       latitude, longitude
     `)
+    .is('deleted_at', null)
     .order('name');
 
   if (error) throw new Error(error.message);
