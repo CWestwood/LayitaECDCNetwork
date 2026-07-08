@@ -1,7 +1,11 @@
 .la-deleted {
+  flex: 1;
+  overflow-y: auto;
   padding: 24px;
   max-width: 1000px;
   margin: 0 auto;
+  width: 100%;
+  font-family: 'Raleway', sans-serif;
 }
 
 .la-deleted__header {
@@ -99,4 +103,14 @@
 
 .la-deleted__btn--danger:hover:not(:disabled) {
   background: #fee2e2;
+}
+
+.la-deleted__btn--restore {
+  border-color: #86efac;
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.la-deleted__btn--restore:hover:not(:disabled) {
+  background: #dcfce7;
 }

@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../auth/supabaseClient';
 
+function firstRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
 // 1. Your Practitioner Directory Query (Already perfect)
 export function usePractitioners() {
   return useQuery({
@@ -13,12 +18,26 @@ export function usePractitioners() {
           ecdc:ecdc_id (id, name, area, chief, headman, number_children, attendance_updated, created_at),
           group:group_id (group_name),
           dsd_funded, dsd_registered,
-          training ( smart_start_ever, first_aid_ever, level4_ever, level5_ever, wordworks03_ever, wordworks35_ever, littlestars_ever, other )
+          training (
+            smart_start_ever, smart_start_date,
+            first_aid_ever, first_aid_date,
+            level4_ever, level4_date,
+            level5_ever, level5_date,
+            wordworks03_ever, wordworks03_date,
+            wordworks35_ever, wordworks35_date,
+            littlestars_ever, littlestars_date,
+            other, other_date
+          )
         `)
         .is('deleted_at', null)
         .order('name');
       if (error) throw error;
-      return data;
+      return (data ?? []).map((row: any) => ({
+        ...row,
+        ecdc: firstRelation(row.ecdc),
+        group: firstRelation(row.group),
+        training: firstRelation(row.training),
+      }));
     },
     staleTime: 1000 * 60 * 5,
   });

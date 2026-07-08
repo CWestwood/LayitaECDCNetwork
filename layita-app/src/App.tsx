@@ -7,12 +7,15 @@ import LoadingScreen from "./layouts/LoadingScreen";
 
 // ─── Page imports ─────────────────────────────────────────────────────────────
 import DashboardPage     from './pages/DashboardPage';
+import MyWorkPage        from './pages/MyWorkPage';
 import ECDCMapPage       from './pages/ECDCMapPage';
 import LoginPage         from './pages/LoginPage';
 import OutreachVisitsPage from './pages/OutreachVisitsPage';
+import OutreachPlanningPage from './pages/OutreachPlanningPage';
 import PractitionersPage  from './pages/PractitionersPage';
 import AuditPage         from './pages/AuditPage';
 import MonitorPage       from './pages/MonitorPage';
+import DataQualityPage   from './pages/DataQualityPage';
 import StaffManagement   from './pages/StaffManagement';
 import DeletedRecords    from './features/layita/deleted';
 
@@ -38,6 +41,14 @@ function AdminRoute() {
   return <Outlet />;
 }
 
+function StaffRoute() {
+  const { session, loading, isAdmin } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+  if (!session || isAdmin) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -54,12 +65,18 @@ export default function App() {
           <Route path="/dashboard"   element={<DashboardPage />} />
           <Route path="/map"         element={<ECDCMapPage />} />
           <Route path="/visits"      element={<OutreachVisitsPage />} />
+          <Route path="/outreach-planning" element={<OutreachPlanningPage />} />
           <Route path="/practitioners" element={<PractitionersPage />} />
+
+          <Route element={<StaffRoute />}>
+            <Route path="/my-work" element={<MyWorkPage />} />
+          </Route>
 
 
         {/* Admin-only routes */}
           <Route element={<AdminRoute />}>
             <Route path="/audit"        element={<AuditPage />} />
+            <Route path="/data-quality" element={<DataQualityPage />} />
             <Route path="/kobo-monitor"      element={<MonitorPage />} />
             <Route path="/users" element={<StaffManagement />} />
             <Route path="/deleted" element={<DeletedRecords />} />

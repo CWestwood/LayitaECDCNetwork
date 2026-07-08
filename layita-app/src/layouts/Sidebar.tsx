@@ -14,7 +14,13 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const { isAdmin, loading } = useAuth()
-  const visibleItems = loading ? [] : NAV_ITEMS.filter(item => item.role === "all" || (item.role === "admin" && isAdmin));
+  const visibleItems = loading
+    ? []
+    : NAV_ITEMS.filter(item =>
+        !item.hiddenFromNav &&
+        (item.role === "all" || (item.role === "admin" && isAdmin) || (item.role === "staff" && !isAdmin)) &&
+        !(isAdmin && item.hideForAdmin)
+      );
 
   useEffect(() => {
     async function getProfile() {
@@ -76,8 +82,8 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
           {/* Note: If you want to add the "nav-section-label" (e.g., "Overview", "Programme") 
               like in the HTML, you will need to update your NAV_ITEMS array to include section 
               headers and map through them here. */}
-          {visibleItems.map(({ to, label, icon }) => (
-            <li key={to}>
+          {visibleItems.map(({ to, label, icon, mobilePrimary }) => (
+            <li key={to} data-mobile-primary={mobilePrimary !== false ? "true" : "false"}>
               <NavLink
                 to={to}
                 className={({ isActive }) => (isActive ? "active" : "")}

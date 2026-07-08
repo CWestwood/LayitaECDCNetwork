@@ -1,6 +1,7 @@
 // src/features/ecdcMap/index.tsx
 
 import { useMemo, useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MapContainer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -29,6 +30,7 @@ import {
   CloseIcon,
 } from './_components';
 import { AdminSoftDeleteButton } from '../layita/components/AdminSoftDeleteButton';
+import { useAuth } from '../auth/useAuth';
 
 import '../../styles/shared.css';
 import '../../styles/ecdcMap.css';
@@ -38,6 +40,8 @@ import { exportReportAsPDF, exportReportAsExcel } from './exportUtils';
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ECDCMap() {
+  const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [selected,        setSelected]        = useState<EcdcWithPractitioners | null>(null);
   const [search,          setSearch]          = useState('');
   const [filtersOpen,     setFiltersOpen]     = useState(false);
@@ -527,6 +531,15 @@ export default function ECDCMap() {
               >
                 View Practitioners
               </button>
+              {isAdmin && (
+                <button
+                  className="ecdc-select-toolbar__btn"
+                  onClick={() => navigate(`/outreach-planning?ecdcs=${Array.from(selectedIds).join(',')}`)}
+                  title="Create planned outreach for selected centres"
+                >
+                  Add to Planned Outreach
+                </button>
+              )}
               <button
                 className="ecdc-select-toolbar__btn"
                 onClick={() => setReportOpen(true)}

@@ -4,11 +4,13 @@ import { supabase } from '../../auth/supabaseClient';
 export interface DashboardStats {
   totalPractitioners: number;
   totalEcdcs: number;
-  visitsThisYear: {
+  selectedYear: number;
+  visitsForYear: {
     total: number;
     byType: Record<string, number>;
     didNotHappen: number;
     mappingVisits: number;
+    byStaff: Record<string, { total: number; byType: Record<string, number> }>;
   };
   recentVisits: Array<{
     id: string;
@@ -21,12 +23,12 @@ export interface DashboardStats {
   }>;
 }
 
-export function useDashboardStats() {
+export function useDashboardStats(year = new Date().getFullYear()) {
   return useQuery({
-    queryKey: ['dashboard_stats'],
+    queryKey: ['dashboard_stats', year],
     queryFn: async (): Promise<DashboardStats> => {
-      const currentYear = new Date().getFullYear();
-      const startOfYear = new Date(currentYear, 0, 1).toISOString();
+      const startOfYear = `${year}-01-01`;
+      const startOfNextYear = `${year + 1}-01-01`;
 
       const [
         practitionersRes,
@@ -46,9 +48,10 @@ export function useDashboardStats() {
 
         supabase
           .from('outreach_visits')
-          .select('outreach_type, outreach_happened')
+          .select('outreach_type, outreach_happened, data_capturer:layita_staff(name)')
           .is('deleted_at', null)
-          .gte('date', startOfYear),
+          .gte('date', startOfYear)
+          .lt('date', startOfNextYear),
 
         supabase
           .from('outreach_visits')
@@ -70,12 +73,20 @@ export function useDashboardStats() {
 
       const visits = visitsYearRes.data || [];
       const byType: Record<string, number> = {};
+      const byStaff: Record<string, { total: number; byType: Record<string, number> }> = {};
       let didNotHappen = 0;
       let mappingVisits = 0;
 
       visits.forEach(v => {
         const type = v.outreach_type || 'Unknown';
+        const staffName = (v.data_capturer as any)?.name || 'Unknown Staff';
         byType[type] = (byType[type] || 0) + 1;
+
+        if (!byStaff[staffName]) {
+          byStaff[staffName] = { total: 0, byType: {} };
+        }
+        byStaff[staffName].total += 1;
+        byStaff[staffName].byType[type] = (byStaff[staffName].byType[type] || 0) + 1;
 
         if (v.outreach_happened !== 'Yes') {
           didNotHappen++;
@@ -92,7 +103,8 @@ export function useDashboardStats() {
           .from('ecdc_list')
           .select('id', { count: 'exact', head: true })
           .is('deleted_at', null)
-          .gte('created_at', startOfYear);
+          .gte('created_at', startOfYear)
+          .lt('created_at', startOfNextYear);
         
         mappingVisits = ecdcsYearRes.count || 0;
       }
@@ -100,11 +112,13 @@ export function useDashboardStats() {
       return {
         totalPractitioners: practitionersRes.count || 0,
         totalEcdcs: ecdcsRes.count || 0,
-        visitsThisYear: {
+        selectedYear: year,
+        visitsForYear: {
           total: visits.length,
           byType,
           didNotHappen,
-          mappingVisits
+          mappingVisits,
+          byStaff
         },
         recentVisits: (recentVisitsRes.data as any) || []
       };

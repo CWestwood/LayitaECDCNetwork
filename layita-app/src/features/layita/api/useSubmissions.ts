@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { supabase } from '../../auth/supabaseClient';
 
 export interface KoboSubmissionRow {
@@ -18,54 +19,83 @@ export interface KoboSubmissionRow {
   payload: any;
 }
 
+export async function fetchSubmissions(): Promise<KoboSubmissionRow[]> {
+  const [subRes, labelRes] = await Promise.all([
+    supabase
+      .from('kobo_submission_monitor')
+      .select('*')
+      .order('submitted_at', { ascending: false })
+      .limit(500),
+    supabase
+      .from('kobo_label')
+      .select('list_name, name, label')
+      .in('list_name', ['layitastaff', 'outreach_type'])
+  ]);
+
+  if (subRes.error) throw subRes.error;
+  if (labelRes.error) throw labelRes.error;
+
+  const submissions = subRes.data ?? [];
+  const labels = labelRes.data ?? [];
+
+  const staffMap = new Map(labels.filter(l => l.list_name === 'layitastaff').map(l => [l.name, l.label]));
+  const typeMap = new Map(labels.filter(l => l.list_name === 'outreach_type').map(l => [l.name, l.label]));
+
+  return submissions.map(sub => {
+    const p = sub.payload || {};
+
+    let ecdcStr = sub.ecdc_name;
+    if (!ecdcStr || ecdcStr === 'Unknown' || ecdcStr === 'none') {
+        ecdcStr = p['ecdc_name_text'] || p['mapping/ecdc_name_link_new'] || p['ecdc_name'];
+        if (ecdcStr === 'none' || ecdcStr === 'not_found') ecdcStr = null;
+    }
+
+    let pracStr = sub.practitioner_name;
+    if (!pracStr || pracStr === 'Unknown' || pracStr === 'none') {
+        pracStr = p['practitioner_new'] || p['ecdc_practitioner_new'] || p['practitioner_name'];
+        if (pracStr === 'none' || pracStr === 'not_found') pracStr = null;
+    }
+
+    return {
+      ...sub,
+      ecdc_name: ecdcStr || sub.ecdc_name,
+      practitioner_name: pracStr || sub.practitioner_name,
+      data_capturer: sub.data_capturer ? (staffMap.get(sub.data_capturer) || sub.data_capturer) : sub.data_capturer,
+      outreach_type: sub.outreach_type ? (typeMap.get(sub.outreach_type) || sub.outreach_type) : sub.outreach_type
+    };
+  });
+}
+
 export const useSubmissions = () => {
   return useQuery<KoboSubmissionRow[]>({
     queryKey: ['kobo_submissions'],
-    queryFn: async () => {
-      const [subRes, labelRes] = await Promise.all([
-        supabase
-          .from('kobo_submission_monitor')
-          .select('*')
-          .order('submitted_at', { ascending: false })
-          .limit(500),
-        supabase
-          .from('kobo_label')
-          .select('list_name, name, label')
-          .in('list_name', ['layitastaff', 'outreach_type'])
-      ]);
-
-      if (subRes.error) throw subRes.error;
-      if (labelRes.error) throw labelRes.error;
-
-      const submissions = subRes.data ?? [];
-      const labels = labelRes.data ?? [];
-
-      const staffMap = new Map(labels.filter(l => l.list_name === 'layitastaff').map(l => [l.name, l.label]));
-      const typeMap = new Map(labels.filter(l => l.list_name === 'outreach_type').map(l => [l.name, l.label]));
-
-      return submissions.map(sub => {
-        const p = sub.payload || {};
-        
-        let ecdcStr = sub.ecdc_name;
-        if (!ecdcStr || ecdcStr === 'Unknown' || ecdcStr === 'none') {
-            ecdcStr = p['ecdc_name_text'] || p['mapping/ecdc_name_link_new'] || p['ecdc_name'];
-            if (ecdcStr === 'none' || ecdcStr === 'not_found') ecdcStr = null;
-        }
-
-        let pracStr = sub.practitioner_name;
-        if (!pracStr || pracStr === 'Unknown' || pracStr === 'none') {
-            pracStr = p['practitioner_new'] || p['ecdc_practitioner_new'] || p['practitioner_name'];
-            if (pracStr === 'none' || pracStr === 'not_found') pracStr = null;
-        }
-
-        return {
-          ...sub,
-          ecdc_name: ecdcStr || sub.ecdc_name,
-          practitioner_name: pracStr || sub.practitioner_name,
-          data_capturer: sub.data_capturer ? (staffMap.get(sub.data_capturer) || sub.data_capturer) : sub.data_capturer,
-          outreach_type: sub.outreach_type ? (typeMap.get(sub.outreach_type) || sub.outreach_type) : sub.outreach_type
-        };
-      });
-    }
+    queryFn: fetchSubmissions,
+    staleTime: 1000 * 60 * 2,
   });
 };
+
+export function useReprocessSubmission() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (instanceId: string) => {
+      const { data, error } = await supabase.functions.invoke('reprocess-kobo', {
+        body: { instance_id: instanceId },
+      });
+
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kobo_submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['data-quality-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['kobo-unmatched'] });
+      queryClient.invalidateQueries({ queryKey: ['visits'] });
+      toast.success('Submission reprocessed');
+    },
+    onError: (error) => {
+      toast.error(`Reprocess failed: ${error.message}`);
+    },
+  });
+}

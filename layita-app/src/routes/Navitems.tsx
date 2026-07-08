@@ -4,6 +4,7 @@ export const NAV_ITEMS = [
     to: "/dashboard",
     label: "Dashboard",
     role: "all",
+    mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -14,9 +15,26 @@ export const NAV_ITEMS = [
     ),
   },
   {
+    to: "/my-work",
+    label: "My Work",
+    role: "staff",
+    mobilePrimary: true,
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M8 6h13" />
+        <path d="M8 12h13" />
+        <path d="M8 18h13" />
+        <path d="M3 6h.01" />
+        <path d="M3 12h.01" />
+        <path d="M3 18h.01" />
+      </svg>
+    ),
+  },
+  {
     to: "/practitioners",
     label: "Practitioners",
     role: "all",
+    mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M10.05 2.53004L4.03002 6.46004C2.10002 7.72004 2.10002 10.54 4.03002 11.8L10.05 15.73C11.13 16.44 12.91 16.44 13.99 15.73L19.98 11.8C21.9 10.54 21.9 7.73004 19.98 6.47004L13.99 2.54004C12.91 1.82004 11.13 1.82004 10.05 2.53004Z" stroke="#292D32" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -29,6 +47,7 @@ export const NAV_ITEMS = [
     to: "/map",
     label: "ECDCs",
     role: "all",
+    mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -40,6 +59,7 @@ export const NAV_ITEMS = [
     to: "/visits",
     label: "Outreach Visits",
     role: "all",
+    mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -54,9 +74,38 @@ export const NAV_ITEMS = [
     to: "/kobo-monitor",
     label: "Kobo Monitor",
     role: "admin",
+    mobilePrimary: false,
+    hiddenFromNav: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+  },
+  {
+    to: "/outreach-planning",
+    label: "Planning",
+    role: "admin",
+    mobilePrimary: false,
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <path d="M8 12h8" />
+        <path d="M8 16h5" />
+      </svg>
+    ),
+  },
+  {
+    to: "/data-quality",
+    label: "Quality & Audit",
+    role: "admin",
+    mobilePrimary: false,
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 11l3 3L22 4" />
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
       </svg>
     ),
   },
@@ -64,6 +113,8 @@ export const NAV_ITEMS = [
   {to: "/audit",
     label: "Audit Logs",
     role: "admin",
+    mobilePrimary: false,
+    hiddenFromNav: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" stroke="#1C274C" strokeWidth="1.5"/>
@@ -77,6 +128,7 @@ export const NAV_ITEMS = [
   {to: "/users",
     label: "Staff Management",
     role: "admin",
+    mobilePrimary: false,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="9" cy="7" r="4" />
@@ -90,6 +142,7 @@ export const NAV_ITEMS = [
     to: "/deleted",
     label: "Recycle Bin",
     role: "admin",
+    mobilePrimary: false,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="3 6 5 6 21 6" />

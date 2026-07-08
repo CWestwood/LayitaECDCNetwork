@@ -113,19 +113,9 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
       if (existing) {
         finalPractitionerId = existing.id;
       } else {
-        // Create a new practitioner if there's no match
-        const { data: newPrac, error: newPracError } = await supabase
-          .from('practitioners')
-          .insert({ name: typedName })
-          .select('id')
-          .single();
-
-        if (newPracError) {
-          setError('Failed to create new practitioner: ' + newPracError.message);
-          setSaving(false);
-          return;
-        }
-        finalPractitionerId = newPrac.id;
+        setError('Choose an existing practitioner. New practitioners should be created through the practitioner workflow.');
+        setSaving(false);
+        return;
       }
     } else {
       finalPractitionerId = '';

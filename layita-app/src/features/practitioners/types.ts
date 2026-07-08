@@ -10,7 +10,16 @@ export interface Practitioner {
   dsd_funded: boolean | null;
   dsd_registered: boolean | null;
   group: { group_name: string } | null;
-  ecdc: { name: string; area: string | null } | null;
+  ecdc: {
+    id: string;
+    name: string;
+    area: string | null;
+    chief?: string | null;
+    headman?: string | null;
+    number_children?: string | null;
+    attendance_updated?: string | null;
+    created_at?: string | null;
+  } | null;
   training: Record<string, boolean> | null;
 }
 

@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
-import Sidebar from "../../../layouts/Sidebar";
-import { useSubmissions } from "../api/useSubmissions";
-import "../../../styles/shared.css";
+import { useReprocessSubmission, useSubmissions } from "../api/useSubmissions";
 import "../../../styles/practitioners.css";
+import "../../../styles/deleted-records.css";
 
 function StatusBadge({ state }: { state: string }) {
   let colorClass = "p2-visit-badge--none";
@@ -20,6 +19,7 @@ function StatusBadge({ state }: { state: string }) {
 
 export default function KoboMonitor() {
   const { data: submissions = [], isLoading } = useSubmissions();
+  const reprocessSubmission = useReprocessSubmission();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -45,10 +45,7 @@ export default function KoboMonitor() {
   };
 
   return (
-    <div className="p2-page">
-      <Sidebar />
-
-      <div className="p2-main">
+      <div className="dq-content-panel">
         <header className="p2-topbar">
           <h1 className="p2-topbar__title">Submission Monitor</h1>
           <p className="p2-topbar__subtitle">Recent KoboToolbox payload processing</p>
@@ -151,6 +148,16 @@ export default function KoboMonitor() {
                               <pre style={{ margin: 0, fontFamily: "inherit" }}>{sub.warnings}</pre>
                             </div>
                           )}
+                          <div className="audit-field">
+                            <span className="audit-field__name">Admin Action</span>
+                            <button
+                              className="la-deleted__btn"
+                              disabled={reprocessSubmission.isPending}
+                              onClick={() => reprocessSubmission.mutate(sub.instance_id)}
+                            >
+                              {reprocessSubmission.isPending ? "Reprocessing..." : "Reprocess Submission"}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -161,6 +168,5 @@ export default function KoboMonitor() {
           </div>
         </div>
       </div>
-    </div>
   );
 }

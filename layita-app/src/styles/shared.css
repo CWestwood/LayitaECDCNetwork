@@ -255,6 +255,63 @@
   font-weight: 600;
 }
 
+.lyt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.lyt-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.lyt-btn--secondary {
+  color: var(--color-text-secondary);
+}
+
+.lyt-btn--danger,
+.lyt-btn--danger-outline {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.lyt-btn--danger {
+  background: var(--color-danger-bg);
+}
+
+.lyt-btn--danger-outline {
+  background: var(--color-background);
+}
+
+.lyt-btn--danger-outline:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+}
+
+.lyt-btn__text {
+  line-height: 1;
+}
+
+.lyt-btn--danger-outline .lyt-btn__text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    shared.mobile.css  –  Mobile & responsive overrides for shared.css
    Import AFTER shared.css.
@@ -377,6 +434,10 @@
     margin-bottom: 0;
     display: flex;
     align-items: stretch;
+  }
+
+  .sidebar__nav li[data-mobile-primary="false"] {
+    display: none;
   }
 
   .sidebar__nav a {

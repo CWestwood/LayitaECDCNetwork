@@ -4,6 +4,15 @@ import { markProcessed } from "../_shared/process-payload.ts";
 Deno.serve(async (req)=>{
   let instanceId = null;
   try {
+    const expectedSecret = Deno.env.get("KOBO_WEBHOOK_SECRET");
+    if (expectedSecret) {
+      const providedSecret = req.headers.get("x-kobo-webhook-secret");
+      if (providedSecret !== expectedSecret) {
+        return json({
+          error: "Unauthorized"
+        }, 401);
+      }
+    }
     const payload = await req.json();
     instanceId = payload._uuid || payload._meta?.instanceID || null;
     if (!instanceId) {

@@ -1,4 +1,4 @@
-import { markProcessed } from "../_shared/process-payload.ts";
+import { markProcessed, processSubmission } from "../_shared/process-payload.ts";
 import { supabase } from "../_shared/supabase-client.ts";
 Deno.serve(async (req)=>{
   // This endpoint should only be callable by administrators
@@ -34,7 +34,7 @@ Deno.serve(async (req)=>{
     }
     // Reset status so markProcessed can upsert cleanly
     await markProcessed(id, "failed", "Reprocessing started");
-    const result = await processPayload(id, raw.payload);
+    const result = await processSubmission(id, raw.payload);
     await markProcessed(id, result.status, result.error, result.warnings);
     results.push({
       id,

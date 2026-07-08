@@ -9,12 +9,14 @@ interface AuthState {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
+  role: string | null;
 }
 
 export function useAuth(): AuthState {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
   
 
   useEffect(() => {
@@ -26,7 +28,10 @@ export function useAuth(): AuthState {
         .select('role')
         .eq('id', userId)
         .single();
-      if( isMounted) setIsAdmin(data?.role === 'administrator');
+      if (isMounted) {
+        setRole(data?.role ?? null);
+        setIsAdmin(data?.role === 'administrator');
+      }
     };
     // Hydrate from existing session on mount
     supabase.auth.getSession().then(async ({ data }) => {
@@ -40,6 +45,12 @@ export function useAuth(): AuthState {
     // Keep in sync with sign-in / sign-out events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (!session?.user) {
+        setRole(null);
+        setIsAdmin(false);
+      } else {
+        fetchRole(session.user.id);
+      }
     });
 
     
@@ -50,5 +61,5 @@ export function useAuth(): AuthState {
     };
   }, []);
 
-  return { session, loading, isAdmin };
+  return { session, loading, isAdmin, role };
 }

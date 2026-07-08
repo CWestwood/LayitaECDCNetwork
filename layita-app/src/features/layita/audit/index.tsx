@@ -1,7 +1,5 @@
 import { useMemo, useState } from "react";
-import Sidebar from "../../../layouts/Sidebar";
 import { useAllAuditLogs, AuditRow } from "../api/useAudit";
-import "../../../styles/shared.css";
 import "../../../styles/practitioners.css";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -52,10 +50,7 @@ export default function AuditLogs() {
     });
 
   return (
-    <div className="p2-page">
-      <Sidebar />
-
-      <div className="p2-main">
+      <div className="dq-content-panel">
         <header className="p2-topbar">
           <h1 className="p2-topbar__title">Activity & Audit Logs</h1>
           <p className="p2-topbar__subtitle">Tracks changes to the underlying data</p>
@@ -133,6 +128,5 @@ export default function AuditLogs() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
