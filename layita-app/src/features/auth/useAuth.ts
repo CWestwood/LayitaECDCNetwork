@@ -4,19 +4,22 @@
 import { useEffect, useState } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
+import { hasCapability, normalizeRole } from './capabilities';
+import type { AppRole, Capability } from './capabilities';
 
 interface AuthState {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
-  role: string | null;
+  role: AppRole | null;
+  can: (capability: Capability) => boolean;
 }
 
 export function useAuth(): AuthState {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [role, setRole] = useState<string | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   
 
   useEffect(() => {
@@ -29,8 +32,9 @@ export function useAuth(): AuthState {
         .eq('id', userId)
         .single();
       if (isMounted) {
-        setRole(data?.role ?? null);
-        setIsAdmin(data?.role === 'administrator');
+        const nextRole = normalizeRole(data?.role);
+        setRole(nextRole);
+        setIsAdmin(nextRole === 'administrator');
       }
     };
     // Hydrate from existing session on mount
@@ -61,5 +65,11 @@ export function useAuth(): AuthState {
     };
   }, []);
 
-  return { session, loading, isAdmin, role };
+  return {
+    session,
+    loading,
+    isAdmin,
+    role,
+    can: (capability) => hasCapability(role, capability),
+  };
 }

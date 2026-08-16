@@ -38,19 +38,19 @@ export function useMyWork() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('name')
+        .select('name, layita_staff_id')
         .eq('id', userId)
         .maybeSingle();
 
       if (profileError) throw new Error(profileError.message);
-      if (!profile?.name) {
+      if (!profile?.layita_staff_id) {
         return { staffName: null, plannedVisits: [], recentVisits: [] };
       }
 
       const { data: staff, error: staffError } = await supabase
         .from('layita_staff')
         .select('id, name')
-        .ilike('name', profile.name)
+        .eq('id', profile.layita_staff_id)
         .maybeSingle();
 
       if (staffError) throw new Error(staffError.message);

@@ -13,12 +13,12 @@ interface UserProfile {
 export default function Sidebar({ footer = null, defaultCollapsed = false }) {
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const { isAdmin, loading } = useAuth()
+  const { isAdmin, loading, can } = useAuth()
   const visibleItems = loading
     ? []
     : NAV_ITEMS.filter(item =>
         !item.hiddenFromNav &&
-        (item.role === "all" || (item.role === "admin" && isAdmin) || (item.role === "staff" && !isAdmin)) &&
+        (!item.capability || can(item.capability)) &&
         !(isAdmin && item.hideForAdmin)
       );
 

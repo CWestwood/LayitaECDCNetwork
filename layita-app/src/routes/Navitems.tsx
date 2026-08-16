@@ -1,9 +1,21 @@
-export const NAV_ITEMS = [
+import type { ReactNode } from 'react';
+import type { Capability } from '../features/auth/capabilities';
+
+interface NavItem {
+  to: string;
+  label: string;
+  capability?: Capability;
+  mobilePrimary: boolean;
+  hiddenFromNav?: boolean;
+  hideForAdmin?: boolean;
+  icon: ReactNode;
+}
+
+export const NAV_ITEMS: NavItem[] = [
  
   {
     to: "/dashboard",
     label: "Dashboard",
-    role: "all",
     mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -17,7 +29,7 @@ export const NAV_ITEMS = [
   {
     to: "/my-work",
     label: "My Work",
-    role: "staff",
+    capability: "manage_own_work",
     mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -33,7 +45,6 @@ export const NAV_ITEMS = [
   {
     to: "/practitioners",
     label: "Practitioners",
-    role: "all",
     mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -46,7 +57,6 @@ export const NAV_ITEMS = [
   {
     to: "/map",
     label: "ECDCs",
-    role: "all",
     mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -58,7 +68,6 @@ export const NAV_ITEMS = [
   {
     to: "/visits",
     label: "Outreach Visits",
-    role: "all",
     mobilePrimary: true,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -73,7 +82,7 @@ export const NAV_ITEMS = [
   {
     to: "/kobo-monitor",
     label: "Kobo Monitor",
-    role: "admin",
+    capability: "reprocess_kobo",
     mobilePrimary: false,
     hiddenFromNav: true,
     icon: (
@@ -85,7 +94,7 @@ export const NAV_ITEMS = [
   {
     to: "/outreach-planning",
     label: "Planning",
-    role: "admin",
+    capability: "manage_plans",
     mobilePrimary: false,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -100,7 +109,7 @@ export const NAV_ITEMS = [
   {
     to: "/data-quality",
     label: "Quality & Audit",
-    role: "admin",
+    capability: "view_quality",
     mobilePrimary: false,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -112,7 +121,7 @@ export const NAV_ITEMS = [
 
   {to: "/audit",
     label: "Audit Logs",
-    role: "admin",
+    capability: "view_quality",
     mobilePrimary: false,
     hiddenFromNav: true,
     icon: (
@@ -127,7 +136,7 @@ export const NAV_ITEMS = [
 
   {to: "/users",
     label: "Staff Management",
-    role: "admin",
+    capability: "manage_users",
     mobilePrimary: false,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -141,7 +150,7 @@ export const NAV_ITEMS = [
   {
     to: "/deleted",
     label: "Recycle Bin",
-    role: "admin",
+    capability: "restore_records",
     mobilePrimary: false,
     icon: (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

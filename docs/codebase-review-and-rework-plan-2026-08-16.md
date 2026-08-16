@@ -102,7 +102,7 @@ On 16 August 2026, a new backup of the linked live project was created at `C:\Us
 | `schema.sql` | 64,788 bytes | `4E69E5F9781F1E0B24510BC5DF7CF25D493352F53BC23B16EE9FE80543F662F6` |
 | `data.sql` | 420,469 bytes | `0751EB2C9A9242347A3AAF3EADF666B5823ECE79AAA915527E4066ED1659C665` |
 
-The data dump contains 45 `COPY` sections across the `auth`, `public`, and `storage` schemas. The schema dump contains 16 tables, 15 functions, 4 views, 40 policies, and 5 triggers. `README.md` in the backup directory records the restore order and limitations; `health-snapshot.json` records aggregate comparison values without row-level data. Because the dump includes authentication and operational data, it must be treated as sensitive. File integrity and structure were checked, but a complete restore into a disposable Supabase project has not yet been performed.
+The data dump contains 45 `COPY` sections across the `auth`, `public`, and `storage` schemas. The schema dump contains 16 tables, 15 functions, 4 views, 40 policies, and 5 triggers. `README.md` in the backup directory records the restore order and limitations; `health-snapshot.json` records aggregate comparison values without row-level data. Because the dump includes authentication and operational data, it must be treated as sensitive. File integrity and structure were checked, and the owner subsequently confirmed that a test restore completed successfully.
 
 ## Critical Supabase findings
 
@@ -509,7 +509,7 @@ Each feature should expose routes/components plus typed query and mutation funct
 
 - [x] Treat the populated `Task Sheet.txt` as the accepted feedback baseline and retain `docs/ui-review-2026-07-07.md` as historical context.
 - [x] Confirm the 16 August migration intent: it was generated with `supabase db pull` after migration-history repair to capture the current live structure.
-- [ ] Preserve the pulled migration in version control before adding fixes. It remains untracked so that it can be included in a deliberate commit with the review artifacts.
+- [x] Preserve the pulled migration and review artifacts in version control on the active development branch. Merging into the main line is intentionally deferred until the work is functional and its gates pass.
 - [x] Create a current live roles/schema/data backup outside the repository and OneDrive; verify its checksums and record its restore order.
 - [x] Resolve historical-backup scope: the owner confirmed that the current database is up to date and previous backups contain no additional information or requests.
 - [x] Record deployed Edge Function metadata: `kobo-fetch` is active at version 37 with JWT verification; `reprocess-kobo` is active at version 2 with JWT verification.
@@ -517,32 +517,41 @@ Each feature should expose routes/components plus typed query and mutation funct
 - [x] Confirm that the repository-root and frontend `.env` files are ignored by Git and are not tracked. The local files also define `KOBO_API_KEY`, but the current Edge Function source does not read that variable.
 - [x] Verify configured production secret names without recording values. Supabase supplies the required default `SUPABASE_URL` and legacy `SUPABASE_SERVICE_ROLE_KEY`. The only custom names are `KOBO_TOKEN_LAYITA` and `KOBO_TOKEN_REHAB`; the source-required `KOBO_WEBHOOK_SECRET` is absent, and the two configured custom names are unused by the current repository source.
 - [x] Capture an aggregate health snapshot and backup manifest for rollback comparison.
-- [ ] Perform a full test restore into a disposable Supabase project before treating the dump as proven disaster recovery.
+- [x] Complete a test restore of the Phase 0 backup; the owner confirmed that the restore succeeded.
 
-**Exit gate status:** the feedback baseline, migration intent, historical-backup decision, current backup, checksums, aggregate snapshot, Edge deployment metadata, and secret-name inventory are complete. Version-control preservation and a restore drill remain open. The discovered webhook-secret mismatch is a Phase 2 ingestion-security repair item and should be resolved before another production deployment.
+**Exit gate status: complete.** The feedback baseline, migration intent, historical-backup decision, version-control baseline, current backup, checksum verification, successful restore test, aggregate snapshot, Edge deployment metadata, secret-name inventory, and branch-first rollout strategy are all recorded. The discovered webhook-secret mismatch remains a Phase 2 ingestion-security repair item and should be resolved before another production deployment.
 
 ### Phase 1 — Restore a reliable database contract
 
-Create forward-only migrations to:
+Branch implementation status:
 
-1. repair all six delete functions and their grants/search paths;
-2. restore ECDC deleted-record listing and all restore functions;
-3. restore safe field-choice merges for practitioners and ECDCs;
-4. restore unmatched resolution and external-ID resolver functions;
-5. restore/rebuild `data_quality_summary`;
-6. decide and implement training dates versus normalized training events;
-7. make planned assignee nullable if “Unassigned” remains required;
-8. restore correction requests if field-user correction reporting remains in scope;
-9. remove unintended anonymous grants/default privileges;
-10. add required FK/check/unique/index constraints;
-11. reconcile route capabilities with RLS/RPC permissions;
-12. add a visit-practitioner junction model for multi-practitioner outreach;
-13. add practitioner lifecycle history and explicit staff-profile linking; and
-14. decide and implement unambiguous outreach metrics and controlled chief/headman references.
+- [x] Repair all six delete functions with fixed `search_path`, authorization, audit output, and history-preserving FK behavior.
+- [x] Restore the ECDC deleted-record listing and all three restore functions while retaining frontend-compatible signatures.
+- [x] Restore field-choice practitioner and ECDC merges; preserve visit participants, plans, training history, and lifecycle data.
+- [x] Restore unmatched resolution and both external-ID resolvers with target validation and deleted-record exclusion.
+- [x] Rebuild `data_quality_summary` as a security-invoker view, including new staff-link and leader-review metrics.
+- [x] Retain the eight legacy training-date fields for current UI compatibility and add normalized `training_courses`/`training_events` history with backfill and synchronization.
+- [x] Make `planned_visits.assigned_to` nullable so “Unassigned” remains valid.
+- [x] Restore correction requests with status/target/resolution constraints, timestamps, indexes, and owner/reviewer RLS.
+- [x] Remove anonymous operational table access, revoke sensitive RPC/trigger execution, and tighten future default privileges.
+- [x] Add coordinate, numeric-text, non-negative metric, attendance, source/status, FK, uniqueness, and query-path constraints/indexes without destructive legacy renames.
+- [x] Replace binary admin/staff routing with named frontend capabilities aligned to RLS/RPC behavior. Managers can reach quality/audit; Kobo reprocessing, planning, recycle-bin, and user management remain administrator-only.
+- [x] Add `outreach_visit_practitioners`, backfill legacy primary links, and keep single-practitioner ingestion synchronized.
+- [x] Add practitioner lifecycle events, retained group history, automatic change capture, and explicit unique `profiles.layita_staff_id` ownership. “My Work” no longer joins people by name.
+- [x] Add explicit outreach attendance/book/photo fields with calculated attendance rate and legacy synchronization. Add canonical chief/headman records plus aliases and ECDC FKs; current distinct spellings are retained as provisional values requiring review.
 
-Add database tests for every role and sensitive RPC. Run a fresh local migration reset from zero, schema lint, generated type diff, and linked staging smoke test.
+Validation completed against a disposable PostgreSQL 17 Supabase container loaded from the Phase 0 schema and all 16 public-data COPY sections:
 
-**Exit gate:** frontend-required objects exist with correct signatures; schema lint has no errors; all role/RPC tests pass on a fresh database.
+- both migrations apply successfully to the restored live-data shape;
+- database contract tests pass for all six delete RPCs, all restores, both merges, unmatched resolution, external-ID signatures, role denial paths, backfills, metric/training triggers, leader aliases, grants, and `search_path` hardening;
+- `plpgsql_check` reports zero errors or warnings for normal and trigger functions;
+- generated TypeScript schema output contains the Phase 1 tables and RPCs;
+- the Edge processor fixture, frontend lint, and production build pass; and
+- the known large-bundle warning remains a later frontend-foundation item.
+
+The full migration history now also applies from zero in an isolated, explicitly named PostgreSQL 17 Supabase container, and the Phase 1 database contract suite passes on that clean schema. This avoids modifying the separate running local Supabase stack. The CLI’s optional final linked-schema comparison timed out, so a linked staging smoke test is still pending; nothing in Phase 1 has been applied to production.
+
+**Exit gate status:** implementation, clean-history and restored-data migrations, contract/RPC tests, procedural lint, type generation, Edge fixture, frontend lint, and build pass on the branch. Only the linked-staging gate remains open and requires a staging project target.
 
 ### Phase 2 — Stabilize ingestion and data quality
 
@@ -668,6 +677,6 @@ Every pull request should run formatting, TS-aware lint, strict typecheck, unit/
 
 ## Recommended immediate next action
 
-Do not start with UI cleanup. Preserve the pulled live-schema migration in version control, perform a restore drill on the new Phase 0 dump, align and test the Kobo gateway/custom-secret authentication contract, and prepare a forward repair migration plus schema-contract/RLS tests. Once the database matches the agreed application contract, establish the shared app shell/auth/type/testing foundation, then complete the user-requested workflows while consolidating CSS and components.
+Proceed to the database-contract work before UI cleanup. Align and test the Kobo gateway/custom-secret authentication contract, then prepare a forward repair migration plus schema-contract/RLS tests. Keep changes isolated on the active development branch and merge only after the relevant functionality and gates pass. Once the database matches the agreed application contract, establish the shared app shell/auth/type/testing foundation, then complete the user-requested workflows while consolidating CSS and components.
 
 That sequence keeps the successful design concept, protects live data, avoids rebuilding broken assumptions, and reduces bloat as part of feature completion rather than through a risky standalone rewrite.

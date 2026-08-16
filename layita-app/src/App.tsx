@@ -2,6 +2,7 @@
 
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './features/auth/useAuth';
+import type { Capability } from './features/auth/capabilities';
 
 import LoadingScreen from "./layouts/LoadingScreen";
 
@@ -33,19 +34,11 @@ function ProtectedRoute() {
   return <Outlet />;
 }
 
-function AdminRoute() {
-  const { session, loading, isAdmin } = useAuth();
+function CapabilityRoute({ capability }: { capability: Capability }) {
+  const { session, loading, can } = useAuth();
 
   if (loading) return <LoadingScreen />;                             
-  if (!session || !isAdmin) return <Navigate to="/map" replace />;
-  return <Outlet />;
-}
-
-function StaffRoute() {
-  const { session, loading, isAdmin } = useAuth();
-
-  if (loading) return <LoadingScreen />;
-  if (!session || isAdmin) return <Navigate to="/dashboard" replace />;
+  if (!session || !can(capability)) return <Navigate to="/map" replace />;
   return <Outlet />;
 }
 
@@ -65,20 +58,30 @@ export default function App() {
           <Route path="/dashboard"   element={<DashboardPage />} />
           <Route path="/map"         element={<ECDCMapPage />} />
           <Route path="/visits"      element={<OutreachVisitsPage />} />
-          <Route path="/outreach-planning" element={<OutreachPlanningPage />} />
           <Route path="/practitioners" element={<PractitionersPage />} />
 
-          <Route element={<StaffRoute />}>
+          <Route element={<CapabilityRoute capability="manage_own_work" />}>
             <Route path="/my-work" element={<MyWorkPage />} />
           </Route>
 
-
-        {/* Admin-only routes */}
-          <Route element={<AdminRoute />}>
+          <Route element={<CapabilityRoute capability="view_quality" />}>
             <Route path="/audit"        element={<AuditPage />} />
             <Route path="/data-quality" element={<DataQualityPage />} />
+          </Route>
+
+          <Route element={<CapabilityRoute capability="reprocess_kobo" />}>
             <Route path="/kobo-monitor"      element={<MonitorPage />} />
+          </Route>
+
+          <Route element={<CapabilityRoute capability="manage_plans" />}>
+            <Route path="/outreach-planning" element={<OutreachPlanningPage />} />
+          </Route>
+
+          <Route element={<CapabilityRoute capability="manage_users" />}>
             <Route path="/users" element={<StaffManagement />} />
+          </Route>
+
+          <Route element={<CapabilityRoute capability="restore_records" />}>
             <Route path="/deleted" element={<DeletedRecords />} />
           </Route>
         </Route>
