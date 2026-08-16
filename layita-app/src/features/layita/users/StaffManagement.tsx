@@ -1,18 +1,18 @@
 // src/features/layita/users/StaffManagement.tsx
 
 import React, { useState, useEffect } from 'react';
-import Sidebar from '../../../layouts/Sidebar';
 import { CloseIcon } from '../../ecdcs/_components';
 
-// Note: Adjust this import to match the actual path to your initialized Supabase client
-import { supabase } from '../../auth/supabaseClient'; 
+import type { Database } from '../../../types/database.generated';
+import type { AppRole } from '../../auth/capabilities';
+import { addStaffManagementItem, fetchStaffManagementData, removeStaffManagementItem } from './api/staffManagement';
 
 import '../../../styles/shared.css';
 import '../../../styles/ecdcMap.css';
 
 export default function StaffManagement() {
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [layitaStaff, setLayitaStaff] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<Database['public']['Tables']['profiles']['Row'][]>([]);
+  const [layitaStaff, setLayitaStaff] = useState<Database['public']['Tables']['layita_staff']['Row'][]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'profiles' | 'staff'>('profiles');
   const [search, setSearch] = useState('');
@@ -25,17 +25,17 @@ export default function StaffManagement() {
   // Add Modal State
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [newItemName, setNewItemName] = useState('');
-  const [newItemRole, setNewItemRole] = useState('datacapturer');
+  const [newItemRole, setNewItemRole] = useState<AppRole>('datacapturer');
 
   const fetchData = async () => {
     setLoading(true);
-    const [profRes, staffRes] = await Promise.all([
-      supabase.from('profiles').select('*').order('name'),
-      supabase.from('layita_staff').select('*').order('name')
-    ]);
-    if (profRes.data) setProfiles(profRes.data);
-    if (staffRes.data) setLayitaStaff(staffRes.data);
-    setLoading(false);
+    try {
+      const data = await fetchStaffManagementData();
+      setProfiles(data.profiles);
+      setLayitaStaff(data.staff);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -46,11 +46,7 @@ export default function StaffManagement() {
     if (!itemToRemove || removeConfirmText !== itemToRemove.name) return;
 
     try {
-      if (itemToRemove.type === 'profile') {
-        await supabase.from('profiles').delete().eq('id', itemToRemove.id);
-      } else {
-        await supabase.from('layita_staff').delete().eq('id', itemToRemove.id);
-      }
+      await removeStaffManagementItem(itemToRemove.type, itemToRemove.id);
       setRemoveModalOpen(false);
       setItemToRemove(null);
       setRemoveConfirmText('');
@@ -65,18 +61,7 @@ export default function StaffManagement() {
     if (!newItemName.trim()) return;
 
     try {
-      if (activeTab === 'staff') {
-        await supabase.from('layita_staff').insert([{ name: newItemName.trim() }]);
-      } else {
-        // Note: 'profiles' are typically tied to 'auth.users' in Supabase via an FK.
-        // If your database enforces this, manual profile inserts without an auth user will fail.
-        // In that case, profiles should be created by inviting a user via the Admin Auth API.
-        await supabase.from('profiles').insert([{
-          id: crypto.randomUUID(), 
-          name: newItemName.trim(),
-          role: newItemRole
-        }]);
-      }
+      await addStaffManagementItem(activeTab === 'staff' ? 'staff' : 'profile', newItemName.trim(), newItemRole);
       setAddModalOpen(false);
       setNewItemName('');
       fetchData();
@@ -93,7 +78,6 @@ export default function StaffManagement() {
 
   return (
     <div className="page">
-      <Sidebar />
 
       {/* Reuse ecdc-map-area styles but adjust layout for a central panel format */}
       <div className="ecdc-map-area" style={{ background: '#f4f5f7', display: 'flex', justifyContent: 'center', padding: '2rem', overflowY: 'auto' }}>
@@ -170,7 +154,7 @@ export default function StaffManagement() {
                   style={{ cursor: 'pointer', background: 'transparent', border: 'none', color: '#999', alignSelf: 'center', padding: '8px' }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setItemToRemove({ id: item.id, name: item.name || 'Unnamed', type: activeTab });
+                    setItemToRemove({ id: item.id, name: item.name || 'Unnamed', type: activeTab === 'profiles' ? 'profile' : 'staff' });
                     setRemoveConfirmText('');
                     setRemoveModalOpen(true);
                   }}
@@ -260,7 +244,7 @@ export default function StaffManagement() {
                       className="ecdc-search-input"
                       style={{ width: '100%', marginBottom: '20px', border: '1px solid #d1d9e0', padding: '10px', borderRadius: '4px', background: '#fff' }}
                       value={newItemRole}
-                      onChange={(e) => setNewItemRole(e.target.value)}
+                      onChange={(e) => setNewItemRole(e.target.value as AppRole)}
                     >
                       <option value="datacapturer">Data Capturer</option>
                       <option value="manager">Manager</option>

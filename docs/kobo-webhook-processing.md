@@ -11,7 +11,7 @@ This document explains how KoboToolbox submissions are received via webhook, pro
 3. Raw payload stored in `kobo_raw_submissions`
 4. `functions/_shared/processSubmission()` transforms + resolves references
 5. ECDC / practitioner / training records synced
-6. Visit record inserted into `outreach_visits`
+6. Visit and attachment-reference records upserted
 7. Processing status written to `kobo_processed`
 
 ---
@@ -133,6 +133,23 @@ Invalid or negative values become `null`.
 A normalized visit record is built and inserted into:
 
 `outreach_visits`
+
+In addition to the operational outreach fields, the normalized visit retains:
+
+* Kobo capture start/end timestamps
+* Public-transport accessibility
+* The explicit BookDash yes/no response
+* Captured latitude, longitude, altitude, and accuracy
+
+Kobo delivery metadata (`_id`, `_uuid`, submission time/user/status,
+validation status, tags, notes, geolocation, form UUID, and instance ID) is
+normalized on `kobo_raw_submissions`, where it belongs with the source receipt.
+
+An image filename creates or updates an `outreach_attachments` row linked to
+the visit. It starts with `transfer_status = 'pending'`. A separate
+authenticated worker must download the binary from Kobo and populate the
+storage provenance fields; ingestion does not claim that the file has already
+been transferred.
 
 ### 6. Return status
 
@@ -468,6 +485,7 @@ Plus dynamic keys.
 ## Core data
 
 * outreach_visits
+* outreach_attachments
 * practitioners
 * ecdc_list
 * training

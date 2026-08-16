@@ -1,19 +1,18 @@
-import { useState, useEffect } from "react";
-import { supabase } from "../features/auth/supabaseClient";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
+import { toast } from "sonner";
 import { NAV_ITEMS } from "../routes/Navitems";
 import logo from "../assets/layitalogosvg.svg";
 import { useAuth }  from "../features/auth/useAuth";
 
-interface UserProfile {
-  name: string;
-  role: string;
+interface SidebarProps {
+  footer?: ReactNode;
+  defaultCollapsed?: boolean;
 }
 
-export default function Sidebar({ footer = null, defaultCollapsed = false }) {
-
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const { isAdmin, loading, can } = useAuth()
+export default function Sidebar({ footer = null, defaultCollapsed = false }: SidebarProps) {
+  const { isAdmin, loading, can, profile, role, session, signOut } = useAuth();
   const visibleItems = loading
     ? []
     : NAV_ITEMS.filter(item =>
@@ -22,31 +21,14 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
         !(isAdmin && item.hideForAdmin)
       );
 
-  useEffect(() => {
-    async function getProfile() {
-      // 1. Get the current authenticated user's ID
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (user) {
-        // 2. Fetch the name and role from the 'profiles' table
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('name, role')
-          .eq('id', user.id)
-          .single(); // We only expect one row
-
-        if (!error && data) {
-          setProfile(data);
-        }
-      }
-    }
-    getProfile();
-  }, []); 
-
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await signOut();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Sign out failed');
+    }
   };
 
   return (
@@ -56,9 +38,11 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
           <img src={logo} alt="Layita Logo" className="sidebar__logo" />
         </div>
         <button
+          type="button"
           className="sidebar__collapse-btn"
           onClick={() => setCollapsed((v) => !v)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
         >
           <svg
             width="12"
@@ -127,10 +111,11 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
         
         <div className="sidebar__user" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <div className="sidebar__user-info" style={{ overflow: 'hidden' }}>
-            <div className="sidebar__user-name">{profile?.name || "Admin User"}</div>
-            <div className="sidebar__user-role" style={{ textTransform: 'capitalize' }}>{profile?.role || "Administrator"}</div>
+            <div className="sidebar__user-name">{profile?.name || session?.user.email || "Signed in"}</div>
+            <div className="sidebar__user-role" style={{ textTransform: 'capitalize' }}>{role || "User"}</div>
           </div>
           <button 
+            type="button"
             onClick={handleLogout} 
             title="Log out"
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted, #6B7280)', padding: '6px', display: 'flex', alignItems: 'center', transition: 'color 0.2s', flexShrink: 0 }}

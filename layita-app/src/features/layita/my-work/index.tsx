@@ -1,4 +1,3 @@
-import Sidebar from '../../../layouts/Sidebar';
 import { useMyWork } from '../api/useMyWork';
 import '../../../styles/shared.css';
 import '../../../styles/my-work.css';
@@ -15,7 +14,6 @@ export default function MyWorkPage() {
 
   return (
     <div className="page mw-page">
-      <Sidebar />
 
       <main className="mw-main">
         <header className="mw-header">

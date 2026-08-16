@@ -1,95 +1,65 @@
-// src/App.tsx
-
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from './features/auth/useAuth';
+import { lazy, Suspense } from 'react';
+import type { ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { Capability } from './features/auth/capabilities';
+import { CapabilityRoute, ProtectedRoute } from './features/auth/RouteGuards';
+import AppShell from './layouts/AppShell';
+import LoadingScreen from './layouts/LoadingScreen';
+import { ROUTE_ACCESS } from './routes/routeAccess';
 
-import LoadingScreen from "./layouts/LoadingScreen";
+const Dashboard = lazy(() => import('./features/dashboard'));
+const MyWork = lazy(() => import('./features/layita/my-work'));
+const EcdcMap = lazy(() => import('./features/ecdcs'));
+const Login = lazy(() => import('./features/auth/Login'));
+const OutreachVisits = lazy(() => import('./features/visits'));
+const OutreachPlanning = lazy(() => import('./features/visits/OutreachPlanning'));
+const Practitioners = lazy(() => import('./features/practitioners'));
+const QualityAuditShell = lazy(() => import('./features/layita/QualityAuditShell'));
+const Audit = lazy(() => import('./features/layita/audit'));
+const Monitor = lazy(() => import('./features/layita/monitoring'));
+const DataQuality = lazy(() => import('./features/layita/data-quality'));
+const StaffManagement = lazy(() => import('./features/layita/users/StaffManagement'));
+const DeletedRecords = lazy(() => import('./features/layita/deleted'));
 
-// ─── Page imports ─────────────────────────────────────────────────────────────
-import DashboardPage     from './pages/DashboardPage';
-import MyWorkPage        from './pages/MyWorkPage';
-import ECDCMapPage       from './pages/ECDCMapPage';
-import LoginPage         from './pages/LoginPage';
-import OutreachVisitsPage from './pages/OutreachVisitsPage';
-import OutreachPlanningPage from './pages/OutreachPlanningPage';
-import PractitionersPage  from './pages/PractitionersPage';
-import AuditPage         from './pages/AuditPage';
-import MonitorPage       from './pages/MonitorPage';
-import DataQualityPage   from './pages/DataQualityPage';
-import StaffManagement   from './pages/StaffManagement';
-import DeletedRecords    from './features/layita/deleted';
-
-// ─── ProtectedRoute ───────────────────────────────────────────────────────────
-// Renders children when authenticated. Shows a blank loading state while the
-// session is being hydrated (avoids a flash-redirect to /login on hard refresh).
-
-
-
-function ProtectedRoute() {
-  const { session, loading } = useAuth();
-
-  if (loading) return <LoadingScreen />;                          
-  if (!session) return <Navigate to="/login" replace />;
-  return <Outlet />;
+function capabilityRoute(capability: Capability, path: string, element: ReactNode) {
+  return (
+    <Route key={path} element={<CapabilityRoute capability={capability} />}>
+      <Route path={path} element={element} />
+    </Route>
+  );
 }
-
-function CapabilityRoute({ capability }: { capability: Capability }) {
-  const { session, loading, can } = useAuth();
-
-  if (loading) return <LoadingScreen />;                             
-  if (!session || !can(capability)) return <Navigate to="/map" replace />;
-  return <Outlet />;
-}
-
-// ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-
-        {/* Public */}
-        <Route path="/login" element={<LoginPage />} />
-
-        {/* Protected — all app routes live inside this wrapper */}
-        <Route element={<ProtectedRoute />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard"   element={<DashboardPage />} />
-          <Route path="/map"         element={<ECDCMapPage />} />
-          <Route path="/visits"      element={<OutreachVisitsPage />} />
-          <Route path="/practitioners" element={<PractitionersPage />} />
-
-          <Route element={<CapabilityRoute capability="manage_own_work" />}>
-            <Route path="/my-work" element={<MyWorkPage />} />
+      <Suspense fallback={<LoadingScreen />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppShell />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/map" element={<EcdcMap />} />
+              <Route path="/visits" element={<OutreachVisits />} />
+              <Route path="/practitioners" element={<Practitioners />} />
+              {capabilityRoute(ROUTE_ACCESS.myWork.capability, ROUTE_ACCESS.myWork.path, <MyWork />)}
+              {capabilityRoute(ROUTE_ACCESS.planning.capability, ROUTE_ACCESS.planning.path, <OutreachPlanning />)}
+              {capabilityRoute(ROUTE_ACCESS.users.capability, ROUTE_ACCESS.users.path, <StaffManagement />)}
+              {capabilityRoute(ROUTE_ACCESS.deleted.capability, ROUTE_ACCESS.deleted.path, <DeletedRecords />)}
+              <Route element={<CapabilityRoute capability={ROUTE_ACCESS.quality.capability} />}>
+                <Route element={<QualityAuditShell />}>
+                  <Route path={ROUTE_ACCESS.quality.path} element={<DataQuality />} />
+                  <Route path={ROUTE_ACCESS.audit.path} element={<Audit />} />
+                  <Route element={<CapabilityRoute capability={ROUTE_ACCESS.koboMonitor.capability} />}>
+                    <Route path={ROUTE_ACCESS.koboMonitor.path} element={<Monitor />} />
+                  </Route>
+                </Route>
+              </Route>
+            </Route>
           </Route>
-
-          <Route element={<CapabilityRoute capability="view_quality" />}>
-            <Route path="/audit"        element={<AuditPage />} />
-            <Route path="/data-quality" element={<DataQualityPage />} />
-          </Route>
-
-          <Route element={<CapabilityRoute capability="reprocess_kobo" />}>
-            <Route path="/kobo-monitor"      element={<MonitorPage />} />
-          </Route>
-
-          <Route element={<CapabilityRoute capability="manage_plans" />}>
-            <Route path="/outreach-planning" element={<OutreachPlanningPage />} />
-          </Route>
-
-          <Route element={<CapabilityRoute capability="manage_users" />}>
-            <Route path="/users" element={<StaffManagement />} />
-          </Route>
-
-          <Route element={<CapabilityRoute capability="restore_records" />}>
-            <Route path="/deleted" element={<DeletedRecords />} />
-          </Route>
-        </Route>
-
-        {/* Fallback — redirect unknown paths to /dashboard */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-
-      </Routes>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

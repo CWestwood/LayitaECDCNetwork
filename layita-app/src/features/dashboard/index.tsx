@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { useDashboardStats } from './api/useDashboardStats';
 import '../../styles/shared.css';
 import '../../styles/dashboard.css';
-import Sidebar from '../../layouts/Sidebar';
 import { formatDate, formatLabel } from '../../lib/format';
 
 export default function Dashboard() {
@@ -18,7 +17,6 @@ export default function Dashboard() {
   if (isLoading) {
     return (
       <div className="da-page">
-        <Sidebar />
         <div className="da-main">
           <div className="da-loading">Loading dashboard...</div>
         </div>
@@ -29,7 +27,6 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="da-page">
-        <Sidebar />
         <div className="da-main">
           <div className="da-error">Failed to load dashboard: {error.message}</div>
         </div>
@@ -43,7 +40,6 @@ export default function Dashboard() {
 
   return (
     <div className="da-page">
-      <Sidebar />
       <div className="da-main">
         <header className="da-topbar">
           <h1 className="da-topbar__title">Dashboard Overview</h1>

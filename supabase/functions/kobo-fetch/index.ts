@@ -6,6 +6,7 @@ import {
   sha256,
 } from "../_shared/processing-run.ts";
 import { authorizeKoboWebhook } from "../_shared/webhook-auth.ts";
+import { extractKoboInstanceId, isKoboPayload } from "../_shared/kobo-payload.ts";
 
 const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
 
@@ -24,8 +25,10 @@ Deno.serve(async (req) => {
     if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) {
       return json({ error: "Payload too large" }, 413);
     }
-    const payload = JSON.parse(body);
-    const instanceId = payload._uuid || payload._meta?.instanceID || null;
+    const payload: unknown = JSON.parse(body);
+    if (!isKoboPayload(payload)) return json({ error: "Payload must be a JSON object" }, 400);
+
+    const instanceId = extractKoboInstanceId(payload);
     if (!instanceId) return json({ error: "Missing instance ID" }, 400);
 
     const payloadHash = await sha256(body);

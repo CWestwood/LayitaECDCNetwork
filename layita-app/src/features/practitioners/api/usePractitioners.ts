@@ -16,7 +16,7 @@ export function usePractitioners() {
         .select(`
           id, name, contact_number1, contact_number2, has_whatsapp, status,
           ecdc:ecdc_id (id, name, area, chief, headman, number_children, attendance_updated, created_at),
-          group:group_id (group_name),
+          group:group_id (id, group_name),
           dsd_funded, dsd_registered,
           training (
             smart_start_ever, smart_start_date,
@@ -32,11 +32,17 @@ export function usePractitioners() {
         .is('deleted_at', null)
         .order('name');
       if (error) throw error;
-      return (data ?? []).map((row: any) => ({
+      return (data ?? []).map((row) => ({
         ...row,
-        ecdc: firstRelation(row.ecdc),
+        ecdc: (() => {
+          const ecdc = firstRelation(row.ecdc);
+          return ecdc ? { ...ecdc, name: ecdc.name ?? 'Unnamed ECDC' } : null;
+        })(),
         group: firstRelation(row.group),
-        training: firstRelation(row.training),
+        training: (() => {
+          const training = firstRelation(row.training);
+          return training ? { ...training } : null;
+        })(),
       }));
     },
     staleTime: 1000 * 60 * 5,
@@ -55,7 +61,7 @@ export function useGlobalVisitStats() {
         .neq('outreach_type', 'update') 
         .order('date', { ascending: false });
       if (error) throw error;
-      return data;
+      return data ?? [];
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -66,6 +72,7 @@ export function usePractitionerVisits(practitionerId: string | null) {
   return useQuery({
     queryKey: ['visits', 'detail', practitionerId],
     queryFn: async () => {
+      if (!practitionerId) return [];
       const { data, error } = await supabase
         .from('outreach_visits')
         .select('id, date, outreach_type, transport_type, transport_cost, transport_km, parents_trained, children_books, comments, outreach_happened')
@@ -73,7 +80,7 @@ export function usePractitionerVisits(practitionerId: string | null) {
         .neq('outreach_type', 'update')
         .order('date', { ascending: false });
       if (error) throw error;
-      return data;
+      return data ?? [];
     },
     enabled: !!practitionerId, 
     staleTime: 1000 * 60 * 5,

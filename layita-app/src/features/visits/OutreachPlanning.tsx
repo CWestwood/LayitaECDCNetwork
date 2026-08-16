@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import Sidebar from '../../layouts/Sidebar';
 import { formatDate, formatLabel } from '../../lib/format';
 import { useAuth } from '../auth/useAuth';
 import {
@@ -116,7 +115,6 @@ export default function OutreachPlanningPage() {
 
   return (
     <div className="page">
-      <Sidebar />
       <main className="op-main">
         <header className="op-header">
           <div>

@@ -9,7 +9,7 @@ export interface Practitioner {
   has_whatsapp: boolean | null;
   dsd_funded: boolean | null;
   dsd_registered: boolean | null;
-  group: { group_name: string } | null;
+  group: { id: string; group_name: string } | null;
   ecdc: {
     id: string;
     name: string;
@@ -20,7 +20,7 @@ export interface Practitioner {
     attendance_updated?: string | null;
     created_at?: string | null;
   } | null;
-  training: Record<string, boolean> | null;
+  training: Record<string, boolean | string | null> | null;
 }
 
 export interface OutreachVisit {

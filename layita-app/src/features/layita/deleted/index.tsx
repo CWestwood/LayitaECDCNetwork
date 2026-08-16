@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import Sidebar from '../../../layouts/Sidebar';
 import { formatDate } from '../../../lib/format';
 import {
   useDeletedPractitioners,
@@ -22,7 +21,6 @@ export default function DeletedRecords() {
 
   return (
     <div className="page">
-      <Sidebar />
       <div className="la-deleted">
         <header className="la-deleted__header">
           <h1 className="la-deleted__title">Deleted Records (Recycle Bin)</h1>

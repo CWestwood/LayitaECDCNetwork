@@ -1,19 +1,9 @@
 // src/features/visits/VisitEditForm.tsx
 import { useState, useEffect } from 'react';
-import { supabase } from '../auth/supabaseClient';
 import { VisitRow } from './api/useVisits';
 import { CloseIcon } from './_components';
-
-interface KoboLabel {
-  list_name: string;
-  name: string;
-  label: string;
-}
-
-interface Practitioner {
-  id: string;
-  name: string;
-}
+import { correctVisit, fetchVisitEditOptions } from './api/visitEdit';
+import type { KoboLabelOption, PractitionerOption } from './api/visitEdit';
 
 interface Props {
   visit: VisitRow;
@@ -27,15 +17,14 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
   const [reason, setReason] = useState('');
 
   // ── Dropdown options ─────────────────────────────────────────
-  const [practitioners,          setPractitioners]          = useState<Practitioner[]>([]);
-  const [outreachTypes,          setOutreachTypes]          = useState<KoboLabel[]>([]);
-  const [outreachHappenedOptions,setOutreachHappenedOptions]= useState<KoboLabel[]>([]);
+  const [practitioners,          setPractitioners]          = useState<PractitionerOption[]>([]);
+  const [outreachTypes,          setOutreachTypes]          = useState<KoboLabelOption[]>([]);
+  const [outreachHappenedOptions,setOutreachHappenedOptions]= useState<KoboLabelOption[]>([]);
   const [optionsLoading,         setOptionsLoading]         = useState(true);
 
   // ── Derive the practitioner id from the visit row ────────────
   const initialPractitionerId =
-    (v as any).practitioner_id ??
-    (typeof v.practitioner === 'object' ? (v.practitioner as any)?.id : v.practitioner) ??
+    v.practitioner_id ?? v.practitioner?.id ??
     '';
 
   // ── Form state ───────────────────────────────────────────────
@@ -62,36 +51,24 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
 
   useEffect(() => {
     async function fetchOptions() {
-      const [pracRes, labelRes] = await Promise.all([
-        supabase.from('practitioners').select('id, name').order('name'),
-        supabase
-          .from('kobo_label')
-          .select('list_name, name, label')
-          .in('list_name', ['outreach_type', 'yesno_other']),
-      ]);
+      const options = await fetchVisitEditOptions();
+      setPractitioners(options.practitioners);
+      setOutreachTypes(options.outreachTypes);
+      setOutreachHappenedOptions(options.outreachHappened);
 
-      if (pracRes.data) setPractitioners(pracRes.data);
-
-      if (labelRes.data) {
-        const types = labelRes.data.filter((l) => l.list_name === 'outreach_type');
-        const haps = labelRes.data.filter((l) => l.list_name === 'yesno_other');
-        setOutreachTypes(types);
-        setOutreachHappenedOptions(haps);
-
-        setForm((prev) => {
+      setForm((prev) => {
           const prevHap = (prev.outreach_happened || '').toLowerCase().trim();
           const prevType = (prev.outreach_type || '').toLowerCase().trim();
           return {
             ...prev,
-            outreach_happened: haps.find((o) => 
+            outreach_happened: options.outreachHappened.find((o) => 
               o.name.toLowerCase() === prevHap || (o.label || '').toLowerCase() === prevHap
             )?.label ?? prev.outreach_happened,
-            outreach_type: types.find((o) => 
+            outreach_type: options.outreachTypes.find((o) => 
               o.name.toLowerCase() === prevType || (o.label || '').toLowerCase() === prevType
             )?.label ?? prev.outreach_type,
           };
-        });
-      }
+      });
 
       setOptionsLoading(false);
     }
@@ -170,16 +147,14 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
       return;
     }
 
-    const { data, error: saveError } = await supabase.rpc('correct_outreach_visit', {
-      p_visit_id: v.id,
-      p_changes: changes,
-      p_reason: reason.trim(),
-    });
-
+    try {
+      await correctVisit(v.id, changes, reason.trim());
+    } catch (saveError) {
+      setSaving(false);
+      setError(saveError instanceof Error ? saveError.message : 'The visit could not be corrected.');
+      return;
+    }
     setSaving(false);
-
-    if (saveError) { setError(saveError.message); return; }
-    if (!data?.success) { setError(data?.code ?? 'The visit could not be corrected.'); return; }
 
     onSaved?.();
     onDone();

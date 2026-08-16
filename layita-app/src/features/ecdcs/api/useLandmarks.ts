@@ -9,7 +9,12 @@ const fetchLandmarks = async () => {
     .order('name');
 
   if (error) throw new Error(error.message);
-  return data;
+  return (data ?? []).flatMap((landmark) =>
+    landmark.latitude === null || landmark.longitude === null ? [] : [{
+      ...landmark,
+      latitude: landmark.latitude,
+      longitude: landmark.longitude,
+    }]);
 };
 
 export function useLandmarks() {

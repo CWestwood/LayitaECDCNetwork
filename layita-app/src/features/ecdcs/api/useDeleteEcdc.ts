@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../auth/supabaseClient';
 import { toast } from 'sonner';
+import { requireRpcObject, rpcNumber, rpcString } from '../../../lib/rpcResult';
 
 export function useDeleteEcdc() {
   const queryClient = useQueryClient();
@@ -13,14 +14,12 @@ export function useDeleteEcdc() {
       );
 
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      
-      return data;
+      return requireRpcObject(data, 'Delete ECDC');
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['ecdcs'] });
       queryClient.invalidateQueries({ queryKey: ['ecdcs', 'with-practitioners'] });
-      toast.warning(`${data.name} marked for deletion. Contact administrator to restore.`);
+      toast.warning(`${rpcString(data, 'name', 'ECDC')} marked for deletion. Contact administrator to restore.`);
     },
     onError: (error) => {
       toast.error(`Delete failed: ${error.message}`);
@@ -39,16 +38,14 @@ export function useHardDeleteEcdc() {
       );
 
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      
-      return data;
+      return requireRpcObject(data, 'Permanently delete ECDC');
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['ecdcs', 'deleted'] });
       queryClient.invalidateQueries({ queryKey: ['ecdcs'] });
       queryClient.invalidateQueries({ queryKey: ['ecdcs', 'with-practitioners'] });
       toast.success(
-        `${data.name} permanently deleted (${data.practitioners_unassigned} practitioners unassigned)`
+        `${rpcString(data, 'name', 'ECDC')} permanently deleted (${rpcNumber(data, 'practitioners_unassigned')} practitioners unassigned)`
       );
     },
     onError: (error) => {

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../auth/supabaseClient';
 import { Practitioner } from './types';
 import { Icon, Icons } from './_components';
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
+import { fetchPractitionerEditOptions, savePractitionerEdits } from './api/practitionerEdit';
 
 interface Group {
   id: string;
@@ -41,8 +41,8 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
   const [ecdcs, setEcdcs] = useState<ECDC[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
 
-  const initialGroupId = (p as any).group_id || (p.group as any)?.id || '';
-  const initialEcdcId = (p as any).ecdc_id || (p.ecdc as any)?.id || '';
+  const initialGroupId = p.group?.id || '';
+  const initialEcdcId = p.ecdc?.id || '';
 
   const [form, setForm] = useState({
     name: p.name || '',
@@ -66,28 +66,22 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
   const [trainingDates, setTrainingDates] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     TRAINING_FILTERS.forEach((f) => {
-      init[f.key] = String((p.training as any)?.[dateKeyForTraining(f.key)] || '');
+      init[f.key] = String(p.training?.[dateKeyForTraining(f.key)] || '');
     });
     return init;
   });
 
   useEffect(() => {
     async function fetchOptions() {
-      const [grpRes, ecdcRes] = await Promise.all([
-        supabase.from('groups').select('id, group_name').order('group_name'),
-        supabase.from('ecdc_list').select('id, name').order('name'),
-      ]);
-
-      const loadedGroups = grpRes.data || [];
-      const loadedEcdcs = ecdcRes.data || [];
+      const { groups: loadedGroups, ecdcs: loadedEcdcs } = await fetchPractitionerEditOptions();
 
       setGroups(loadedGroups);
       setEcdcs(loadedEcdcs);
 
       setForm((prev) => ({
         ...prev,
-        group_id: prev.group_id || loadedGroups.find((g) => g.group_name === (p as any).group?.group_name)?.id || '',
-        ecdc_id: prev.ecdc_id || loadedEcdcs.find((e) => e.name === (p as any).ecdc?.name)?.id || '',
+        group_id: prev.group_id || loadedGroups.find((g) => g.group_name === p.group?.group_name)?.id || '',
+        ecdc_id: prev.ecdc_id || loadedEcdcs.find((e) => e.name === p.ecdc?.name)?.id || '',
       }));
 
       setOptionsLoading(false);
@@ -123,7 +117,7 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
 
     TRAINING_FILTERS.forEach((f) => {
       if (trainingForm[f.key] !== !!p.training?.[f.key]) changes.push(`${f.label} training`);
-      const existingDate = String((p.training as any)?.[dateKeyForTraining(f.key)] || '');
+      const existingDate = String(p.training?.[dateKeyForTraining(f.key)] || '');
       if (trainingDates[f.key] !== existingDate) changes.push(`${f.label} date`);
     });
 
@@ -139,9 +133,8 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
     setSaving(true);
     setError(null);
 
-    const { error: saveError, count } = await supabase
-      .from('practitioners')
-      .update({
+    try {
+      await savePractitionerEdits(p.id, {
         name: form.name || null,
         group_id: form.group_id || null,
         ecdc_id: form.ecdc_id || null,
@@ -150,32 +143,13 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
         has_whatsapp: form.has_whatsapp,
         dsd_funded: form.dsd_funded,
         dsd_registered: form.dsd_registered,
-      }, { count: 'exact' })
-      .eq('id', p.id);
-
-    if (saveError) {
-      setSaving(false);
-      setError(saveError.message);
-      return;
-    }
-
-    if (count === 0) {
-      setSaving(false);
-      setError('Permission denied - only administrators can edit practitioners.');
-      return;
-    }
-
-    const { error: trainingError } = await supabase
-      .from('training')
-      .upsert({
-        id: p.id,
+      }, {
         ...trainingForm,
         ...trainingDatePayload(trainingDates),
       });
-
-    if (trainingError) {
+    } catch (saveError) {
       setSaving(false);
-      setError(`Failed to save training data: ${trainingError.message}`);
+      setError(saveError instanceof Error ? saveError.message : 'Practitioner could not be saved.');
       return;
     }
 

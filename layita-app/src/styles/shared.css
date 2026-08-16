@@ -12,7 +12,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 /* ── Page shell ── */
-.page {
+.app-shell {
   display: flex;
   height: 100vh;
   width: 100vw;
@@ -255,6 +255,53 @@
   font-weight: 600;
 }
 
+.app-shell__content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.page {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: 'Raleway', sans-serif;
+}
+
+.app-shell__content .da-page,
+.app-shell__content .ecdc-map-area,
+.app-shell__content .visits-page,
+.app-shell__content .practitioners-page {
+  height: 100%;
+}
+
+.app-error {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: 'Raleway', sans-serif;
+}
+
+.app-error__card {
+  width: min(560px, 100%);
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-panel);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+}
+
+.app-error__card pre { white-space: pre-wrap; }
+
 .lyt-btn {
   display: inline-flex;
   align-items: center;
@@ -383,11 +430,18 @@
 ══════════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   /* ── Page shell: vertical stack, bottom-nav layout ── */
-  .page {
+  .app-shell {
     flex-direction: column;
     height: 100dvh; /* dynamic viewport height for mobile browsers */
     overflow: hidden;
   }
+
+  .app-shell__content {
+    width: 100%;
+    height: auto;
+  }
+
+  .page { height: 100%; }
 
   /* ── Sidebar → Bottom nav bar ── */
   .sidebar {

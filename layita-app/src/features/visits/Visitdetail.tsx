@@ -6,7 +6,6 @@ import { VisitRow, useRawKoboSubmission } from './api/useVisits';
 import { formatLabel } from '../../lib/format';
 import { fmtDate, resolveHappened, PencilIcon, PersonIcon, CloseIcon } from './_components';
 import VisitEditForm from './VisitEditForm';
-import { supabase } from '../auth/supabaseClient';
 import { useDeleteVisit } from './api/useDeleteVisit';
 import { useAuth } from '../auth/useAuth';
 
@@ -18,7 +17,7 @@ interface Props {
 function flattenPayload(payload: unknown): Array<[string, string]> {
   if (!payload || typeof payload !== 'object') return [];
   return Object.entries(payload as Record<string, unknown>)
-    .map(([key, value]) => [
+    .map(([key, value]): [string, string] => [
       key,
       typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
         ? String(value)
@@ -29,7 +28,7 @@ function flattenPayload(payload: unknown): Array<[string, string]> {
 
 export default function VisitDetail({ visit: v, onClose }: Props) {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, role } = useAuth();
   const hap = resolveHappened(v.outreach_happened);
   const [editing, setEditing] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
@@ -38,20 +37,7 @@ export default function VisitDetail({ visit: v, onClose }: Props) {
   const rawKobo = useRawKoboSubmission(showRaw ? v.kobo_instance_id : null);
   const rawRows = useMemo(() => flattenPayload(rawKobo.data?.payload), [rawKobo.data]);
 
-  const handleEditClick = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert('Permission denied - you must be logged in to access the edit form.');
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    const role = profile?.role?.toLowerCase();
+  const handleEditClick = () => {
     if (role !== 'administrator' && role !== 'manager') {
       alert('Permission denied - only administrators and managers can access the edit form.');
       return;

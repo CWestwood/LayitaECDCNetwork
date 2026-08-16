@@ -3,8 +3,14 @@ import { supabase } from "./supabase-client.ts";
 type SupabaseClientLike = typeof supabase;
 type Payload = Record<string, unknown>;
 type Warnings = string[];
+type Geopoint = {
+  latitude: number;
+  longitude: number;
+  altitude: number | null;
+  accuracy: number | null;
+};
 
-export const PROCESSOR_VERSION = "phase2-2026-08-16";
+export const PROCESSOR_VERSION = "phase2-form-schema-2026-08-16";
 
 type ResolutionDecision = {
   canonical_ecdc_id: string | null;
@@ -41,8 +47,11 @@ export async function processSubmission(
   payload: Payload,
   db: SupabaseClientLike = supabase,
 ) {
+  if (!textValue(payload._uuid)) payload = { ...payload, _uuid: instanceId };
   const warnings: Warnings = [];
   const outreachType = textValue(payload.outreach_type).toLowerCase();
+  const outreachOutcome = textValue(payload.happened).toLowerCase();
+  const capturedLocation = parseGeopoint(payload, warnings);
   const resolution = await loadResolutionDecision(db, instanceId, warnings);
 
   if (resolution?.reason_code.startsWith("QUARANTINED_")) {
@@ -79,8 +88,13 @@ export async function processSubmission(
   const resolvedPractitionerIds = resolution?.canonical_practitioner_ids ?? [];
   const resolvedPrimaryPractitionerId = resolvedPractitionerIds[0] ?? null;
 
-  if (MAPPING_OUTREACH_TYPES.has(outreachType) || UPDATE_OUTREACH_TYPES.has(outreachType)) {
-    ecdcId = await handleEcdcSync(db, payload, warnings, resolution?.canonical_ecdc_id ?? null);
+  if (
+    UPDATE_OUTREACH_TYPES.has(outreachType) ||
+    (MAPPING_OUTREACH_TYPES.has(outreachType) && outreachOutcome !== "no" && outreachOutcome !== "else")
+  ) {
+    ecdcId = await handleEcdcSync(
+      db, payload, warnings, resolution?.canonical_ecdc_id ?? null, capturedLocation,
+    );
     primaryPractitionerId = await handlePractitionerSync(
       db, payload, ecdcId, groupId, groupLabel, warnings, resolvedPrimaryPractitionerId,
     );
@@ -89,9 +103,16 @@ export async function processSubmission(
     primaryPractitionerId = await handleInterestedPractitionerSync(
       db, payload, groupId, groupLabel, warnings, resolvedPrimaryPractitionerId,
     );
-  } else if (LOOKUP_ONLY_TYPES.has(outreachType)) {
+  } else if (LOOKUP_ONLY_TYPES.has(outreachType) && outreachOutcome !== "no") {
     primaryPractitionerId = resolvedPrimaryPractitionerId ??
       await lookupPractitionerOnly(db, payload, instanceId, warnings);
+  } else if (
+    (MAPPING_OUTREACH_TYPES.has(outreachType) && (outreachOutcome === "no" || outreachOutcome === "else")) ||
+    (LOOKUP_ONLY_TYPES.has(outreachType) && outreachOutcome === "no")
+  ) {
+    // These branches intentionally omit practitioner/ECDC questions in the
+    // current XLSForm, so their absence is not an unmatched-reference error.
+    primaryPractitionerId = resolvedPrimaryPractitionerId;
   } else {
     warnings.push(`Unrecognized outreach type: "${outreachType}" - visit recorded without practitioner link`);
   }
@@ -119,6 +140,14 @@ export async function processSubmission(
     kobo_instance_id: instanceId,
     source: "kobo",
     people_reached: safeInt(payload.Number_of_people_reached),
+    capture_started_at: safeTimestamp(payload.start, "start", warnings),
+    capture_ended_at: safeTimestamp(payload.end, "end", warnings),
+    public_transport_accessible: yesNoBoolean(payload.Is_this_site_accessi_by_public_transport),
+    bookdash_given: yesNoBoolean(payload["support/bookdash"]),
+    captured_latitude: capturedLocation?.latitude ?? null,
+    captured_longitude: capturedLocation?.longitude ?? null,
+    captured_altitude_m: capturedLocation?.altitude ?? null,
+    captured_accuracy_m: capturedLocation?.accuracy ?? null,
   };
 
   const { data: visitData, error: visitError } = await db
@@ -142,6 +171,7 @@ export async function processSubmission(
   ].filter((id): id is string => Boolean(id))));
   await syncVisitParticipants(db, visitData.id, primaryPractitionerId, participantIds, warnings);
   await syncVisitSource(db, visitData.id, instanceId, warnings);
+  const attachmentCount = await syncVisitAttachment(db, visitData.id, instanceId, payload, warnings);
 
   return {
     status: warnings.length > 0 ? "partial" : "success",
@@ -151,6 +181,7 @@ export async function processSubmission(
       processor_version: PROCESSOR_VERSION,
       resolution_reason_code: resolution?.reason_code ?? null,
       participant_count: participantIds.length,
+      attachment_count: attachmentCount,
     },
   };
 }
@@ -184,7 +215,7 @@ async function getLabel(db: SupabaseClientLike, list: string, value: unknown) {
 
 function parseMultiSelect(v: unknown) {
   if (!v) return [];
-  return String(v).split(" ").filter(Boolean);
+  return String(v).trim().split(/\s+/).filter(Boolean);
 }
 
 /* =========================================================================
@@ -193,8 +224,8 @@ function parseMultiSelect(v: unknown) {
 
 function safeInt(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
-  const n = parseInt(String(value), 10);
-  return Number.isNaN(n) ? null : n;
+  const n = Number(String(value).trim());
+  return Number.isInteger(n) ? n : null;
 }
 
 function safeFloat(value: unknown) {
@@ -211,6 +242,24 @@ function safePositiveNumeric(value: unknown, fieldName: string, warnings: Warnin
     return null;
   }
   return n;
+}
+
+function safeTimestamp(value: unknown, fieldName: string, warnings: Warnings) {
+  const raw = textValue(value);
+  if (!raw) return null;
+  const timestamp = new Date(raw);
+  if (Number.isNaN(timestamp.getTime())) {
+    warnings.push(`${fieldName} was not a valid timestamp - stored as null`);
+    return null;
+  }
+  return timestamp.toISOString();
+}
+
+function yesNoBoolean(value: unknown) {
+  const normalized = textValue(value).toLowerCase();
+  if (normalized === "yes") return true;
+  if (normalized === "no") return false;
+  return null;
 }
 
 /* =========================================================================
@@ -271,6 +320,7 @@ async function handleEcdcSync(
   payload: Payload,
   warnings: Warnings,
   resolvedEcdcId: string | null,
+  capturedLocation: Geopoint | null,
 ) {
   const selectedValue = firstText(payload, [
     "mapping/ecdc_name_link",
@@ -324,9 +374,10 @@ async function handleEcdcSync(
     "headman",
     "mapping/What_is_the_name_of_your_Headman",
   ]);
-  assignBooleanIfPresent(ecdcData, "dsd_registered", payload, ["mapping/dsd_registered", "dsd_registered"]);
-  assignBooleanIfPresent(ecdcData, "dsd_funded", payload, ["mapping/dsd_funded", "dsd_funded"]);
-  assignLocationIfPresent(ecdcData, payload, warnings);
+  if (capturedLocation) {
+    ecdcData.latitude = capturedLocation.latitude;
+    ecdcData.longitude = capturedLocation.longitude;
+  }
 
   if (ecdc) {
     const { error } = await db.from("ecdc_list").update(ecdcData).eq("id", ecdc.id);
@@ -456,14 +507,14 @@ async function upsertPractitioner(
   }
 
   const practitionerData: Record<string, unknown> = { name };
-  assignIfPresent(practitionerData, "contact_number1", payload, [
+  assignPhoneIfPresent(practitionerData, "contact_number1", payload, [
     "mapping/practitioner_number_1",
     "practitioner_number_1",
-  ]);
-  assignIfPresent(practitionerData, "contact_number2", payload, [
+  ], warnings);
+  assignPhoneIfPresent(practitionerData, "contact_number2", payload, [
     "mapping/practitioner_number_2",
     "practitioner_number_2",
-  ]);
+  ], warnings);
   assignBooleanIfPresent(practitionerData, "has_whatsapp", payload, [
     "mapping/practitioner_whatsapp",
     "practitioner_whatsapp",
@@ -500,15 +551,13 @@ async function handleTrainingSync(
   if (!payload["mapping/training_yn"] && !payload.training_yn) return;
 
   const prevTraining = parseMultiSelect(payload["mapping/training_prev"] ?? payload.training_prev);
+  // The current XLSForm only offers firstaid, level4, level5, and other.
+  // Do not erase legacy training flags that this form cannot represent.
   const trainingData = {
     id: practitionerId,
-    smart_start_ever: prevTraining.includes("smartstart"),
     first_aid_ever: prevTraining.includes("firstaid"),
     level4_ever: prevTraining.includes("level4"),
     level5_ever: prevTraining.includes("level5"),
-    wordworks03_ever: prevTraining.includes("ww03"),
-    wordworks35_ever: prevTraining.includes("ww35"),
-    littlestars_ever: prevTraining.includes("littlestars"),
     other: payload["mapping/training_prev_other"] || payload.training_prev_other || null,
   };
 
@@ -606,6 +655,30 @@ async function syncVisitSource(
   if (error) warnings.push(`Visit source-lineage sync failed: ${error.message}`);
 }
 
+async function syncVisitAttachment(
+  db: SupabaseClientLike,
+  visitId: string,
+  instanceId: string,
+  payload: Payload,
+  warnings: Warnings,
+) {
+  const filename = firstText(payload, ["mapping/photo_site"]);
+  if (!filename) return 0;
+
+  const { error } = await db.from("outreach_attachments").upsert({
+    visit_id: visitId,
+    source_system: "kobo",
+    source_instance_id: instanceId,
+    source_field: "mapping/photo_site",
+    source_filename: filename,
+  }, { onConflict: "source_system,source_instance_id,source_field,source_filename" });
+  if (error) {
+    warnings.push(`Attachment reference sync failed: ${error.message}`);
+    return 0;
+  }
+  return 1;
+}
+
 /* =========================================================================
    HELPERS: IDENTIFIERS + FIELD MAPPING
    ========================================================================= */
@@ -692,25 +765,50 @@ function assignBooleanIfPresent(target: Record<string, unknown>, targetKey: stri
   }
 }
 
-function assignLocationIfPresent(target: Record<string, unknown>, payload: Payload, warnings: Warnings) {
-  const location = firstText(payload, ["mapping/location", "location"]);
-  if (!location) return;
+function assignPhoneIfPresent(
+  target: Record<string, unknown>,
+  targetKey: string,
+  payload: Payload,
+  sourceKeys: string[],
+  warnings: Warnings,
+) {
+  const phone = firstText(payload, sourceKeys);
+  if (!phone) return;
+  if (!/^\d{10}$/.test(phone)) {
+    warnings.push(`${sourceKeys[0]} must contain exactly 10 digits - canonical record not updated`);
+    return;
+  }
+  target[targetKey] = phone;
+}
 
-  const coords = location.split(" ");
+function parseGeopoint(payload: Payload, warnings: Warnings): Geopoint | null {
+  const location = firstText(payload, ["mapping/location", "location"]);
+  if (!location) return null;
+
+  const coords = location.trim().split(/\s+/);
   if (coords.length < 2) {
     warnings.push(`ECDC location coords malformed: "${location}"`);
-    return;
+    return null;
   }
 
-  const lat = parseFloat(coords[0]);
-  const lng = parseFloat(coords[1]);
-  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+  const latitude = safeFloat(coords[0]);
+  const longitude = safeFloat(coords[1]);
+  if (
+    latitude === null || longitude === null ||
+    latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+  ) {
     warnings.push(`ECDC location coords malformed: "${location}"`);
-    return;
+    return null;
   }
 
-  target.latitude = lat;
-  target.longitude = lng;
+  const altitude = safeFloat(coords[2]);
+  const rawAccuracy = safeFloat(coords[3]);
+  const accuracy = rawAccuracy !== null && rawAccuracy >= 0 ? rawAccuracy : null;
+  if (rawAccuracy !== null && rawAccuracy < 0) {
+    warnings.push(`ECDC location accuracy was negative (${rawAccuracy}) - stored as null`);
+  }
+
+  return { latitude, longitude, altitude, accuracy };
 }
 
 /* =========================================================================
@@ -761,6 +859,10 @@ export const __testing = {
   canonicalUuid,
   isMissingChoice,
   looksLikeIdentifier,
+  parseMultiSelect,
+  parseGeopoint,
   safeInt,
   safePositiveNumeric,
+  safeTimestamp,
+  yesNoBoolean,
 };

@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import { themeColors as t } from '../../lib/layita_colors';
 import { formatLabel } from '../../lib/format';
 import { useVisits, VisitRow } from './api/useVisits';
-import Sidebar from '../../layouts/Sidebar';
 import VisitRowComponent from './Visitrow';
 import VisitDetail from './Visitdetail';
 import {
@@ -128,7 +127,6 @@ export default function OutreachVisits() {
 
   return (
     <div className="page">
-      <Sidebar />
 
       <div className="ov-main">
         <div className="ov-topbar">

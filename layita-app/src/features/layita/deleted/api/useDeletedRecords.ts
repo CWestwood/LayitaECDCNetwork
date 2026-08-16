@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { supabase } from '../../../auth/supabaseClient';
+import { requireRpcObject, rpcString } from '../../../../lib/rpcResult';
 
 export function useDeletedPractitioners() {
   return useQuery({
@@ -45,14 +46,13 @@ export function useRestorePractitioner() {
     mutationFn: async (id: string) => {
       const { data, error } = await supabase.rpc('restore_practitioner', { p_id: id });
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Restore practitioner');
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['practitioners'] });
       queryClient.invalidateQueries({ queryKey: ['practitioners', 'deleted'] });
       queryClient.invalidateQueries({ queryKey: ['ecdcs', 'with-practitioners'] });
-      toast.success(`${data.name ?? 'Practitioner'} restored`);
+      toast.success(`${rpcString(data, 'name', 'Practitioner')} restored`);
     },
     onError: (error) => {
       toast.error(`Restore failed: ${error.message}`);
@@ -67,14 +67,13 @@ export function useRestoreEcdc() {
     mutationFn: async (id: string) => {
       const { data, error } = await supabase.rpc('restore_ecdc', { e_id: id });
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Restore ECDC');
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['ecdcs'] });
       queryClient.invalidateQueries({ queryKey: ['ecdcs', 'deleted'] });
       queryClient.invalidateQueries({ queryKey: ['ecdcs', 'with-practitioners'] });
-      toast.success(`${data.name ?? 'ECDC'} restored`);
+      toast.success(`${rpcString(data, 'name', 'ECDC')} restored`);
     },
     onError: (error) => {
       toast.error(`Restore failed: ${error.message}`);
@@ -89,8 +88,7 @@ export function useRestoreVisit() {
     mutationFn: async (id: string) => {
       const { data, error } = await supabase.rpc('restore_outreach_visit', { v_id: id });
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Restore visit');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['visits'] });

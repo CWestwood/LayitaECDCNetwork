@@ -79,7 +79,7 @@ export function useDashboardStats(year = new Date().getFullYear()) {
 
       visits.forEach(v => {
         const type = v.outreach_type || 'Unknown';
-        const staffName = (v.data_capturer as any)?.name || 'Unknown Staff';
+        const staffName = v.data_capturer?.name || 'Unknown Staff';
         byType[type] = (byType[type] || 0) + 1;
 
         if (!byStaff[staffName]) {
@@ -120,7 +120,22 @@ export function useDashboardStats(year = new Date().getFullYear()) {
           mappingVisits,
           byStaff
         },
-        recentVisits: (recentVisitsRes.data as any) || []
+        recentVisits: (recentVisitsRes.data ?? []).flatMap((visit) => {
+          if (!visit.date || !visit.outreach_type) return [];
+          return [{
+            ...visit,
+            date: visit.date,
+            outreach_type: visit.outreach_type,
+            practitioner: visit.practitioner
+              ? {
+                  name: visit.practitioner.name ?? 'Unnamed practitioner',
+                  ecdc: visit.practitioner.ecdc?.name
+                    ? { name: visit.practitioner.ecdc.name }
+                    : null,
+                }
+              : null,
+          }];
+        })
       };
     },
     staleTime: 1000 * 60 * 5, // 5 minutes

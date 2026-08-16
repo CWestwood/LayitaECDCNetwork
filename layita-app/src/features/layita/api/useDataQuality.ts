@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { supabase } from '../../auth/supabaseClient';
+import { requireRpcObject, rpcBoolean, rpcString } from '../../../lib/rpcResult';
 
 export interface DataQualityMetric {
   metric_key: string;
@@ -62,23 +63,44 @@ export interface EcdcOption {
   number_children: string | null;
 }
 
-function firstRelation<T>(value: T | T[] | null | undefined): T | null {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
+function severity(value: string | null): DataQualityMetric['severity'] {
+  return value === 'critical' || value === 'high' || value === 'medium' || value === 'low'
+    ? value
+    : 'low';
+}
+
+export async function fetchDataQualitySummary(): Promise<DataQualityMetric[]> {
+  const { data, error } = await supabase
+    .from('data_quality_summary')
+    .select('metric_key, label, value, severity')
+    .order('severity', { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((metric, index) => ({
+    metric_key: metric.metric_key ?? `metric-${index}`,
+    label: metric.label ?? 'Unnamed metric',
+    value: metric.value ?? 0,
+    severity: severity(metric.severity),
+  }));
+}
+
+export async function fetchUnmatchedRecords(): Promise<UnmatchedRecord[]> {
+  const { data, error } = await supabase
+    .from('kobo_unmatched')
+    .select('id, instance_id, field, raw_value, created_at')
+    .is('resolved_at', null)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).flatMap((record): UnmatchedRecord[] => record.created_at
+    ? [{ ...record, created_at: record.created_at }]
+    : []);
 }
 
 export function useDataQualitySummary() {
   return useQuery<DataQualityMetric[]>({
     queryKey: ['data-quality-summary'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('data_quality_summary')
-        .select('metric_key, label, value, severity')
-        .order('severity', { ascending: true });
-
-      if (error) throw new Error(error.message);
-      return data ?? [];
-    },
+    queryFn: fetchDataQualitySummary,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -86,16 +108,7 @@ export function useDataQualitySummary() {
 export function useUnmatchedRecords() {
   return useQuery<UnmatchedRecord[]>({
     queryKey: ['kobo-unmatched'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('kobo_unmatched')
-        .select('id, instance_id, field, raw_value, created_at')
-        .is('resolved_at', null)
-        .order('created_at', { ascending: false });
-
-      if (error) throw new Error(error.message);
-      return data ?? [];
-    },
+    queryFn: fetchUnmatchedRecords,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -111,7 +124,17 @@ export function useKoboReconciliation() {
         .order('submitted_at', { ascending: false })
         .limit(250);
       if (error) throw new Error(error.message);
-      return data ?? [];
+      return (data ?? []).flatMap((record): ReconciliationRecord[] => {
+        if (!record.instance_id || !record.submitted_at) return [];
+        return [{
+          ...record,
+          instance_id: record.instance_id,
+          submitted_at: record.submitted_at,
+          reconciliation_state: record.reconciliation_state ?? 'unknown',
+          unresolved_count: record.unresolved_count ?? 0,
+          action_required: record.action_required ?? false,
+        }];
+      });
     },
     staleTime: 1000 * 60 * 2,
   });
@@ -128,7 +151,16 @@ export function useDuplicateVisitCandidates() {
         .order('confidence_score', { ascending: false })
         .limit(100);
       if (error) throw new Error(error.message);
-      return data ?? [];
+      return (data ?? []).flatMap((candidate): DuplicateVisitCandidate[] => {
+        if (!candidate.visit_a_id || !candidate.visit_b_id || !candidate.date) return [];
+        return [{
+          ...candidate,
+          visit_a_id: candidate.visit_a_id,
+          visit_b_id: candidate.visit_b_id,
+          date: candidate.date,
+          confidence_score: candidate.confidence_score ?? 0,
+        }];
+      });
     },
     staleTime: 1000 * 60 * 2,
   });
@@ -145,8 +177,11 @@ export function useResolveDuplicateVisit() {
         p_action: 'merge',
       });
       if (error) throw new Error(error.message);
-      if (!data?.success) throw new Error(data?.code ?? 'Duplicate resolution failed');
-      return data;
+      const result = requireRpcObject(data, 'Resolve duplicate visit');
+      if (rpcBoolean(result, 'success') !== true) {
+        throw new Error(rpcString(result, 'code', 'Duplicate resolution failed'));
+      }
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['outreach-duplicate-candidates'] });
@@ -215,14 +250,13 @@ export function useResolveUnmatched() {
     }) => {
       const { data, error } = await supabase.rpc('resolve_unmatched_submission', {
         p_unmatched_id: id,
-        p_resolved_id: resolvedId ?? null,
         p_resolution_type: resolutionType,
-        p_note: note ?? null,
+        ...(resolvedId ? { p_resolved_id: resolvedId } : {}),
+        ...(note ? { p_note: note } : {}),
       });
 
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Resolve unmatched submission');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kobo-unmatched'] });
@@ -255,8 +289,7 @@ export function useMergePractitioners() {
       });
 
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Merge practitioners');
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['practitioners'] });
@@ -264,7 +297,7 @@ export function useMergePractitioners() {
       queryClient.invalidateQueries({ queryKey: ['visits'] });
       queryClient.invalidateQueries({ queryKey: ['audit_logs_all'] });
       queryClient.invalidateQueries({ queryKey: ['data-quality-summary'] });
-      toast.success(data?.message ?? 'Practitioners merged');
+      toast.success(rpcString(data, 'message', 'Practitioners merged'));
     },
     onError: (error) => {
       toast.error(`Merge failed: ${error.message}`);
@@ -292,8 +325,7 @@ export function useMergeEcdcs() {
       });
 
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Merge ECDCs');
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['ecdcs'] });
@@ -303,7 +335,7 @@ export function useMergeEcdcs() {
       queryClient.invalidateQueries({ queryKey: ['practitioners', 'options'] });
       queryClient.invalidateQueries({ queryKey: ['audit_logs_all'] });
       queryClient.invalidateQueries({ queryKey: ['data-quality-summary'] });
-      toast.success(data?.message ?? 'ECDCs merged');
+      toast.success(rpcString(data, 'message', 'ECDCs merged'));
     },
     onError: (error) => {
       toast.error(`Merge failed: ${error.message}`);

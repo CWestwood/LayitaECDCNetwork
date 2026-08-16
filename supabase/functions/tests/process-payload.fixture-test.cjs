@@ -66,6 +66,7 @@ class FakeSupabase {
       outreach_visits: [],
       outreach_visit_practitioners: [],
       outreach_visit_sources: [],
+      outreach_attachments: [],
       kobo_unmatched: [],
       kobo_processed: [],
       kobo_resolution_ledger: [],
@@ -243,6 +244,8 @@ function findByExternalKey(records, rawValue) {
 function basePayload(overrides = {}) {
   return {
     _uuid: crypto.randomUUID(),
+    start: "2026-07-07T08:00:00+02:00",
+    end: "2026-07-07T08:30:00+02:00",
     outreach_date: "2026-07-07",
     data_capturer: "sive",
     outreach_type: "caregiver",
@@ -256,6 +259,7 @@ function basePayload(overrides = {}) {
     "support/bookdash_children": "12",
     "support/bookdash_perchild": "1",
     "support/bookdash_practitioner": "2",
+    "support/bookdash": "yes",
     ...overrides,
   };
 }
@@ -272,11 +276,92 @@ async function run() {
     "mapping/location": "-31.920722 28.656597 824.8 15.6",
     "mapping/practitioner_number_1": "0737691300",
     "mapping/practitioner_whatsapp": "yes",
+    "mapping/dsd_registered": "yes",
+    "mapping/dsd_funded": "no",
+    "mapping/training_yn": "yes",
+    "mapping/training_prev": "firstaid   level4",
+    "mapping/photo_site": "ecdc-photo.jpg",
   }), fake);
   assert.equal(mappingResult.status, "success");
   assert.equal(fake.tables.ecdc_list[0].name, "Existing ECDC");
   assert.equal(fake.tables.ecdc_list[0].area, "New Area");
   assert.equal(fake.tables.practitioners[0].name, "Existing Practitioner");
+  assert.equal(fake.tables.practitioners[0].dsd_registered, true);
+  assert.equal(fake.tables.practitioners[0].dsd_funded, false);
+  assert.equal(Object.hasOwn(fake.tables.ecdc_list[0], "dsd_registered"), false);
+  assert.equal(fake.tables.training[0].first_aid_ever, true);
+  assert.equal(fake.tables.training[0].level4_ever, true);
+  assert.equal(Object.hasOwn(fake.tables.training[0], "smart_start_ever"), false);
+  assert.equal(fake.tables.outreach_visits.find((v) => v.kobo_instance_id === "test-mapping").photos_taken, true);
+  const mappingVisit = fake.tables.outreach_visits.find((v) => v.kobo_instance_id === "test-mapping");
+  assert.equal(mappingVisit.capture_started_at, "2026-07-07T06:00:00.000Z");
+  assert.equal(mappingVisit.capture_ended_at, "2026-07-07T06:30:00.000Z");
+  assert.equal(mappingVisit.captured_latitude, -31.920722);
+  assert.equal(mappingVisit.captured_longitude, 28.656597);
+  assert.equal(mappingVisit.captured_altitude_m, 824.8);
+  assert.equal(mappingVisit.captured_accuracy_m, 15.6);
+  assert.equal(fake.tables.outreach_attachments.length, 1);
+  assert.equal(fake.tables.outreach_attachments[0].source_filename, "ecdc-photo.jpg");
+
+  const invalidPhoneResult = await processSubmission("test-invalid-phone", basePayload({
+    outreach_type: "update",
+    ecdc_name: "11111111-1111-4111-8111-111111111111",
+    "mapping/practitioner_number_1": "+27 73 769 1300",
+  }), fake);
+  assert.equal(invalidPhoneResult.status, "partial");
+  assert.equal(fake.tables.practitioners[0].contact_number1, "0737691300");
+
+  const missedMapping = await processSubmission("test-mapping-missed", basePayload({
+    outreach_type: "mapping",
+    happened: "no",
+    ecdc_practitioner: "",
+    "mapping/ecdc_name_link": "",
+  }), fake);
+  assert.equal(missedMapping.status, "success");
+  assert.equal(fake.tables.kobo_unmatched.length, 0);
+
+  const missedCaregiver = await processSubmission("test-caregiver-missed", basePayload({
+    happened: "no",
+    ecdc_practitioner: "",
+  }), fake);
+  assert.equal(missedCaregiver.status, "success");
+  assert.equal(fake.tables.kobo_unmatched.length, 0);
+
+  const updateResult = await processSubmission("test-update", basePayload({
+    outreach_type: "update",
+    happened: "",
+    ecdc_practitioner: "22222222-2222-4222-8222-222222222222",
+    ecdc_name: "11111111-1111-4111-8111-111111111111",
+    "mapping/details_needed": "area location",
+    "mapping/area": "Updated by current form",
+    "mapping/location": "-31.920722   28.656597",
+  }), fake);
+  assert.equal(updateResult.status, "success");
+  assert.equal(fake.tables.ecdc_list[0].area, "Updated by current form");
+  assert.equal(fake.tables.ecdc_list[0].latitude, -31.920722);
+  assert.equal(fake.tables.ecdc_list[0].longitude, 28.656597);
+
+  const alternativeResult = await processSubmission("test-alternative", basePayload({
+    happened: "else",
+    What_did_you_do_instead: "literacy_promotion",
+    Number_of_people_reached: "18",
+    "support/bookdash": "yes",
+    "support/bookdash_children": "10",
+    "support/bookdash_perchild": "2",
+    "support/bookdash_practitioner": "3",
+    Is_this_site_accessi_by_public_transport: "no",
+  }), fake);
+  assert.equal(alternativeResult.status, "success");
+  const alternativeVisit = fake.tables.outreach_visits.find((v) =>
+    v.kobo_instance_id === "test-alternative"
+  );
+  assert.equal(alternativeVisit.did_instead, "literacy_promotion");
+  assert.equal(alternativeVisit.people_reached, 18);
+  assert.equal(alternativeVisit.children_books, 10);
+  assert.equal(alternativeVisit.books_per_child, 2);
+  assert.equal(alternativeVisit.books_to_practitioner, 3);
+  assert.equal(alternativeVisit.bookdash_given, true);
+  assert.equal(alternativeVisit.public_transport_accessible, false);
 
   const compactId = "22222222222242228222222222222222";
   const compactResult = await processSubmission("test-compact", basePayload({ ecdc_practitioner: compactId }), fake);
@@ -312,6 +397,14 @@ async function run() {
   const negativeResult = await processSubmission("test-negative", basePayload({ transport_cost: "-5" }), fake);
   assert.equal(negativeResult.status, "partial");
   assert.equal(fake.tables.outreach_visits.find((v) => v.kobo_instance_id === "test-negative").transport_cost, null);
+
+  const invalidIntegerResult = await processSubmission("test-invalid-integer", basePayload({
+    "support/parents_present": "12 people",
+  }), fake);
+  assert.equal(invalidIntegerResult.status, "success");
+  assert.equal(fake.tables.outreach_visits.find((v) =>
+    v.kobo_instance_id === "test-invalid-integer"
+  ).parents_trained, null);
 
   await processSubmission("test-compact", basePayload({ comments: "reprocessed" }), fake);
   assert.equal(fake.tables.outreach_visits.filter((v) => v.kobo_instance_id === "test-compact").length, 1);

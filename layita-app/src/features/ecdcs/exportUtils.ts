@@ -1,11 +1,12 @@
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx';
 import type { EcdcWithPractitioners } from './api/types';
 
 // ─── PDF export ───────────────────────────────────────────────────────────────
 
 export async function exportReportAsPDF(drawerBodyEl: HTMLElement) {
+  const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
   const canvas = await html2canvas(drawerBodyEl, {
     scale: 2,
     useCORS: true,
@@ -27,7 +28,6 @@ export async function exportReportAsPDF(drawerBodyEl: HTMLElement) {
   // Slice the image across pages if it's taller than one page
   while (remainingH > 0) {
     const sliceH = Math.min(remainingH, pageH - margin * 2);
-    const sy = imgH - remainingH;
     pdf.addImage(imgData, 'PNG', margin, y, contentW, imgH, '', 'FAST', 0);
     // Clip to one page height by drawing a white rect over the overflow
     if (remainingH > pageH - margin * 2) {
@@ -44,10 +44,11 @@ export async function exportReportAsPDF(drawerBodyEl: HTMLElement) {
 
 // ─── Excel export ─────────────────────────────────────────────────────────────
 
-export function exportReportAsExcel(
+export async function exportReportAsExcel(
   selectedEcdcs: EcdcWithPractitioners[],
   lastVisitMap: Map<string, string> | null,
 ) {
+  const XLSX = await import('xlsx');
   const rows: Record<string, string>[] = [];
 
   for (const ecdc of selectedEcdcs) {

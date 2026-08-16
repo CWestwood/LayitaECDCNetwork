@@ -558,7 +558,9 @@ The full migration history now also applies from zero in an isolated, explicitly
 Branch implementation status:
 
 - [x] Define a fail-closed webhook contract using a dedicated `KOBO_WEBHOOK_SECRET`, constant-time header comparison, POST-only handling, and a 2 MiB payload limit. `kobo-fetch` is configured with gateway JWT verification disabled because Kobo authenticates with the custom secret; `reprocess-kobo` retains JWT verification and an administrator-role check. Do not reuse the outgoing `KOBO_TOKEN_LAYITA` or `KOBO_TOKEN_REHAB` API tokens as the inbound webhook secret.
-- [ ] Expand fixtures to every actual XLSForm branch. Current fixtures cover mapping, compact/hash IDs, caregiver/support-style lookup, interested practitioners, unmatched IDs, negative transport, duplicate delivery, ledger multi-practitioner overrides, quarantine, and authentication. Direct workbook inspection remains pending because the required spreadsheet artifact runtime was unavailable in this implementation session.
+- [x] Align ingestion with the supplied `KOBO_INGESTION_GUIDE.md` and `kobo-form-schema.json`, and expand fixtures across the current form branches: successful/missed mapping, ECDC update, successful/missed caregiver outreach, alternative literacy activity, interested practitioners, compact/hash IDs, unmatched IDs, negative transport, duplicate delivery, ledger multi-practitioner overrides, quarantine, and authentication. The alignment also accepts Kobo's flat `meta/instanceID`, rejects non-object webhook bodies, parses multi-select/geopoint whitespace safely, avoids false unmatched issues for questions omitted by skip logic, prevents DSD writes to nonexistent ECDC columns, and preserves legacy training flags that the current form cannot express.
+- [x] Normalize the remaining current-form values without introducing the guide's parallel `outreach_submissions` model. Capture start/end, public-transport accessibility, explicit BookDash yes/no, and the complete geopoint snapshot on `outreach_visits`; extract Kobo receipt metadata onto `kobo_raw_submissions`; and create visit-linked `outreach_attachments` rows for image filenames. Migration `20260816220000_normalize_kobo_form_values.sql` backfills existing raw/visit data. Binary download and Supabase Storage upload remain a separate authenticated transfer workflow, represented by the attachment status/provenance fields.
+- [ ] Repair the source XLSForm before its next Kobo deployment: `support` and `literacy_promotion` are referenced as outreach types but are absent from that choice list, several relevance expressions have ambiguous or unreachable branches, and both practitioner-phone constraints contain smart quotes. Until then, ingestion enforces the stated 10-digit phone contract and retains rejected source values in the raw payload.
 - [x] Make unmatched logging idempotent with one open issue per submission/field/value, occurrence counts, last-seen timestamps, and an atomic service-only RPC.
 - [x] Accept PostgreSQL/deterministic-hash UUID shapes, prevent future UUID-like ECDC names, and migrate the one deterministic malformed ECDC into its referenced canonical ECDC with an audit record.
 - [x] Add controlled processing runs with payload hashes, receipt counts, immutable attempts, processor versions, actors, terminal status, result IDs, warnings, and provenance. Reprocessing is capped at 50 validated instance IDs per request and is safe against duplicate visit creation.
@@ -572,7 +574,8 @@ Branch implementation status:
 Validation completed on the branch:
 
 - the entire migration history applies from zero in an isolated PostgreSQL 17 Supabase container;
-- Phase 1 and Phase 2 database contract suites pass;
+- Phase 1, Phase 2, and Kobo form-normalization database contract suites pass;
+- a pre-migration fixture confirms existing raw metadata, visit/session values, complete geopoints, and image references are backfilled correctly;
 - `plpgsql_check` reports no findings for the new processing, unmatched, correction, and duplicate-resolution functions;
 - Deno type-checks both Edge Function entry points;
 - processor and webhook-auth fixtures pass;
@@ -601,6 +604,8 @@ Required staging rollout order:
 7. Add route-level and on-demand dependency lazy loading.
 
 **Exit gate:** lint, typecheck, unit tests, and build pass; route/access tests pass; main bundle is split by route; no user-visible design regression.
+
+**Implementation status (2026-08-17):** Implemented on the working branch. The application now has one auth/profile source, capability-based guards, a shared protected shell, nested lazy routes, a global query/toast/error-provider layer, generated database types, strict TypeScript, TS-aware linting, runtime-checked JSON RPC results, and normalized view/query boundaries. Redundant route wrappers, duplicate login/sidebar styles, and unused starter assets were removed. The automated gate passes (`lint`, `typecheck`, 4 role/access unit tests, and production build), and the build emits separate route chunks. The production preview returns successfully. Final authenticated desktop/mobile visual regression confirmation remains a staging check because no controllable browser was available in this implementation session. Regenerate `src/types/database.generated.ts` after the pending Phase 2 migration is applied to the linked staging database.
 
 ### Phase 4 — Complete and repair requested functionality
 

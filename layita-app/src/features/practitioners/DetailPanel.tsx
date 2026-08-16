@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { resolveGroupColor } from "../../lib/Groupcolors";
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
 import { usePractitionerVisits } from "./api/usePractitioners";
-import { useAuditLogs } from "../layita/api/useAudit";
+import { useAuditLogs, type AuditRow } from "../layita/api/useAudit";
 import { useDeletePractitioner } from "./api/useDeletePractitioner";
 import { Practitioner } from "./types";
 import { AdminSoftDeleteButton } from "../layita/components/AdminSoftDeleteButton";
@@ -45,8 +45,8 @@ const fmt = (val: string | null) => {
   return <span>{val}</span>;
 };
 
-function groupRows(rows: ReturnType<typeof useAuditLogs>["data"]) {
-  const map = new Map<string, { meta: (typeof rows)[0]; fields: typeof rows }>();
+function groupRows(rows: AuditRow[] | undefined) {
+  const map = new Map<string, { meta: AuditRow; fields: AuditRow[] }>();
   for (const row of rows ?? []) {
     const key = `${row.changed_at.slice(0, 19)}_${row.changed_by_name ?? "system"}`;
     if (!map.has(key)) map.set(key, { meta: row, fields: [] });

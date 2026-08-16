@@ -14,7 +14,7 @@ import { useLandmarks } from './api/useLandmarks';
 import { useDeleteEcdc } from './api/useDeleteEcdc';
 import { useGlobalVisitStats } from '../practitioners/api/usePractitioners';
 
-import Sidebar from '../../layouts/Sidebar';
+import { useAppShellFooter } from '../../layouts/AppShell';
 import {
   VISIT_PRESETS,
   fmtDate,
@@ -72,7 +72,7 @@ export default function ECDCMap() {
     if (!globalVisits.length) return null;
     const map = new Map<string, string>();
     for (const v of globalVisits) {
-      if (!map.has(v.practitioner_id)) map.set(v.practitioner_id, v.date);
+      if (v.practitioner_id && v.date && !map.has(v.practitioner_id)) map.set(v.practitioner_id, v.date);
     }
     return map;
   }, [globalVisits]);
@@ -211,11 +211,6 @@ export default function ECDCMap() {
     return TRAINING_FILTERS.filter((f) => training[f.key] === true).map((f) => f.label);
   };
 
-  const getMissingTrainingTags = (training: Record<string, boolean> | null) => {
-    if (!training) return TRAINING_FILTERS.map((f) => f.label);
-    return TRAINING_FILTERS.filter((f) => training[f.key] !== true).map((f) => f.label);
-  };
-
   const handleViewPractitioners = () => {
     const pracIds = selectedEcdcs
       .flatMap(e => e.practitioners?.map(p => p.id) || [])
@@ -231,7 +226,7 @@ export default function ECDCMap() {
   };
 
   // ── Sidebar legend footer ────────────────────────────────────────────────────
-  const legendFooter = legendGroups.length > 0 ? (
+  const legendFooter = useMemo(() => legendGroups.length > 0 ? (
     <>
       <div className="ecdc-legend__heading">Groups</div>
       <div className="ecdc-legend__items">
@@ -246,12 +241,12 @@ export default function ECDCMap() {
         })}
       </div>
     </>
-  ) : null;
+  ) : null, [legendGroups]);
+  useAppShellFooter(legendFooter);
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="page">
-      <Sidebar footer={legendFooter} />
 
       <div className="ecdc-map-area">
 
