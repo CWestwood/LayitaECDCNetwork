@@ -17,6 +17,26 @@ export interface UnmatchedRecord {
   created_at: string;
 }
 
+export interface ReconciliationRecord {
+  instance_id: string;
+  submitted_at: string;
+  processing_status: string | null;
+  reconciliation_state: string;
+  unresolved_count: number;
+  attempt_count: number | null;
+  error_message: string | null;
+  action_required: boolean;
+}
+
+export interface DuplicateVisitCandidate {
+  visit_a_id: string;
+  visit_b_id: string;
+  date: string;
+  confidence_score: number;
+  instance_a: string | null;
+  instance_b: string | null;
+}
+
 export interface PractitionerOption {
   id: string;
   name: string | null;
@@ -77,6 +97,65 @@ export function useUnmatchedRecords() {
       return data ?? [];
     },
     staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useKoboReconciliation() {
+  return useQuery<ReconciliationRecord[]>({
+    queryKey: ['kobo-reconciliation'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('kobo_reconciliation')
+        .select('instance_id, submitted_at, processing_status, reconciliation_state, unresolved_count, attempt_count, error_message, action_required')
+        .eq('action_required', true)
+        .order('submitted_at', { ascending: false })
+        .limit(250);
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useDuplicateVisitCandidates() {
+  return useQuery<DuplicateVisitCandidate[]>({
+    queryKey: ['outreach-duplicate-candidates'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('outreach_duplicate_candidates')
+        .select('visit_a_id, visit_b_id, date, confidence_score, instance_a, instance_b')
+        .gte('confidence_score', 70)
+        .order('confidence_score', { ascending: false })
+        .limit(100);
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useResolveDuplicateVisit() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ keepId, discardId, reason }: { keepId: string; discardId: string; reason: string }) => {
+      const { data, error } = await supabase.rpc('resolve_duplicate_outreach_visit', {
+        p_keep_id: keepId,
+        p_discard_id: discardId,
+        p_reason: reason,
+        p_action: 'merge',
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.code ?? 'Duplicate resolution failed');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outreach-duplicate-candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['kobo-reconciliation'] });
+      queryClient.invalidateQueries({ queryKey: ['visits'] });
+      queryClient.invalidateQueries({ queryKey: ['audit_logs_all'] });
+      toast.success('Duplicate visit merged without double-counting');
+    },
+    onError: (error) => toast.error(`Duplicate could not be resolved: ${error.message}`),
   });
 }
 

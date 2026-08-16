@@ -4,6 +4,16 @@ type SupabaseClientLike = typeof supabase;
 type Payload = Record<string, unknown>;
 type Warnings = string[];
 
+export const PROCESSOR_VERSION = "phase2-2026-08-16";
+
+type ResolutionDecision = {
+  canonical_ecdc_id: string | null;
+  canonical_practitioner_ids: string[] | null;
+  responsible_staff_user_id: string | null;
+  reason_code: string;
+  decision: Record<string, unknown>;
+};
+
 const MAPPING_OUTREACH_TYPES = new Set(["mapping", "baseline", "full_audit"]);
 const LOOKUP_ONLY_TYPES = new Set([
   "support",
@@ -16,10 +26,11 @@ const UPDATE_OUTREACH_TYPES = new Set(["update", "update_ecdc_details"]);
 
 const MISSING_CHOICE_VALUES = new Set(["", "none", "not_found", "null", "undefined"]);
 const DASHED_UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMPACT_HEX_RE = /^[0-9a-f]{32}$/i;
 
 const labelCache = new Map<string, string | null>();
+const LABEL_CACHE_LIMIT = 500;
 
 /* =========================================================================
    CORE PROCESSING
@@ -32,6 +43,18 @@ export async function processSubmission(
 ) {
   const warnings: Warnings = [];
   const outreachType = textValue(payload.outreach_type).toLowerCase();
+  const resolution = await loadResolutionDecision(db, instanceId, warnings);
+
+  if (resolution?.reason_code.startsWith("QUARANTINED_")) {
+    return {
+      status: "quarantined",
+      warnings,
+      provenance: {
+        processor_version: PROCESSOR_VERSION,
+        resolution_reason_code: resolution.reason_code,
+      },
+    };
+  }
 
   const [
     dataCapturerId,
@@ -42,7 +65,7 @@ export async function processSubmission(
     didInsteadLabel,
     groupLabel,
   ] = await Promise.all([
-    resolveDataCapturer(db, payload, warnings),
+    resolveDataCapturer(db, payload, warnings, resolution?.responsible_staff_user_id ?? null),
     resolveGroup(db, payload),
     getLabel(db, "transport", payload.transport_type),
     getLabel(db, "outreach_type", outreachType),
@@ -53,15 +76,22 @@ export async function processSubmission(
 
   let primaryPractitionerId: string | null = null;
   let ecdcId: string | null = null;
+  const resolvedPractitionerIds = resolution?.canonical_practitioner_ids ?? [];
+  const resolvedPrimaryPractitionerId = resolvedPractitionerIds[0] ?? null;
 
   if (MAPPING_OUTREACH_TYPES.has(outreachType) || UPDATE_OUTREACH_TYPES.has(outreachType)) {
-    ecdcId = await handleEcdcSync(db, payload, warnings);
-    primaryPractitionerId = await handlePractitionerSync(db, payload, ecdcId, groupId, groupLabel, warnings);
+    ecdcId = await handleEcdcSync(db, payload, warnings, resolution?.canonical_ecdc_id ?? null);
+    primaryPractitionerId = await handlePractitionerSync(
+      db, payload, ecdcId, groupId, groupLabel, warnings, resolvedPrimaryPractitionerId,
+    );
     await handleTrainingSync(db, payload, primaryPractitionerId, warnings);
   } else if (INTERESTED_OUTREACH_TYPES.has(outreachType)) {
-    primaryPractitionerId = await handleInterestedPractitionerSync(db, payload, groupId, groupLabel, warnings);
+    primaryPractitionerId = await handleInterestedPractitionerSync(
+      db, payload, groupId, groupLabel, warnings, resolvedPrimaryPractitionerId,
+    );
   } else if (LOOKUP_ONLY_TYPES.has(outreachType)) {
-    primaryPractitionerId = await lookupPractitionerOnly(db, payload, instanceId, warnings);
+    primaryPractitionerId = resolvedPrimaryPractitionerId ??
+      await lookupPractitionerOnly(db, payload, instanceId, warnings);
   } else {
     warnings.push(`Unrecognized outreach type: "${outreachType}" - visit recorded without practitioner link`);
   }
@@ -106,10 +136,22 @@ export async function processSubmission(
     };
   }
 
+  const participantIds = Array.from(new Set([
+    primaryPractitionerId,
+    ...resolvedPractitionerIds,
+  ].filter((id): id is string => Boolean(id))));
+  await syncVisitParticipants(db, visitData.id, primaryPractitionerId, participantIds, warnings);
+  await syncVisitSource(db, visitData.id, instanceId, warnings);
+
   return {
     status: warnings.length > 0 ? "partial" : "success",
     visitId: visitData.id,
     warnings,
+    provenance: {
+      processor_version: PROCESSOR_VERSION,
+      resolution_reason_code: resolution?.reason_code ?? null,
+      participant_count: participantIds.length,
+    },
   };
 }
 
@@ -132,6 +174,10 @@ async function getLabel(db: SupabaseClientLike, list: string, value: unknown) {
     .maybeSingle();
 
   const label = data?.label ?? normalizedValue;
+  if (labelCache.size >= LABEL_CACHE_LIMIT) {
+    const oldestKey = labelCache.keys().next().value;
+    if (oldestKey) labelCache.delete(oldestKey);
+  }
   labelCache.set(key, label);
   return label;
 }
@@ -171,7 +217,21 @@ function safePositiveNumeric(value: unknown, fieldName: string, warnings: Warnin
    HELPERS: REFERENCE RESOLUTION
    ========================================================================= */
 
-async function resolveDataCapturer(db: SupabaseClientLike, payload: Payload, warnings: Warnings) {
+async function resolveDataCapturer(
+  db: SupabaseClientLike,
+  payload: Payload,
+  warnings: Warnings,
+  resolvedProfileId: string | null,
+) {
+  if (resolvedProfileId) {
+    const { data: profile, error } = await db
+      .from("profiles")
+      .select("layita_staff_id")
+      .eq("id", resolvedProfileId)
+      .maybeSingle();
+    if (error) warnings.push(`Ledger staff lookup failed: ${error.message}`);
+    if (profile?.layita_staff_id) return profile.layita_staff_id;
+  }
   if (!payload.data_capturer) return null;
 
   const staffName = await getLabel(db, "layitastaff", payload.data_capturer);
@@ -206,7 +266,12 @@ async function resolveGroup(db: SupabaseClientLike, payload: Payload) {
    HELPERS: ECDC / PRACTITIONER SYNC
    ========================================================================= */
 
-async function handleEcdcSync(db: SupabaseClientLike, payload: Payload, warnings: Warnings) {
+async function handleEcdcSync(
+  db: SupabaseClientLike,
+  payload: Payload,
+  warnings: Warnings,
+  resolvedEcdcId: string | null,
+) {
   const selectedValue = firstText(payload, [
     "mapping/ecdc_name_link",
     "ecdc_name",
@@ -217,9 +282,18 @@ async function handleEcdcSync(db: SupabaseClientLike, payload: Payload, warnings
   const selectedUuid = canonicalUuid(selectedValue);
 
   let ecdc: { id: string; name?: string | null } | null = null;
-  let name = selectedIsMissing ? newName : selectedValue;
+  let name: string | null = selectedIsMissing ? newName : selectedValue;
 
-  if (selectedUuid) {
+  if (resolvedEcdcId) {
+    const { data, error } = await db.from("ecdc_list").select("id, name").eq("id", resolvedEcdcId).maybeSingle();
+    if (error) warnings.push(`Ledger ECDC lookup failed: ${error.message}`);
+    if (data) {
+      ecdc = data;
+      name = newName || data.name || name;
+    }
+  }
+
+  if (!ecdc && selectedUuid) {
     ecdc = await findRecordByExternalKey(db, "ecdc_list", selectedUuid, selectedValue, warnings, "ECDC");
     name = newName || ecdc?.name || null;
     if (!ecdc && !newName) {
@@ -227,7 +301,7 @@ async function handleEcdcSync(db: SupabaseClientLike, payload: Payload, warnings
       await logUnmatched(db, textValue(payload._uuid) || null, "mapping/ecdc_name_link", selectedValue, warnings);
       return null;
     }
-  } else if (!selectedIsMissing && selectedValue) {
+  } else if (!ecdc && !selectedIsMissing && selectedValue) {
     const { data } = await db.from("ecdc_list").select("id, name").ilike("name", selectedValue).maybeSingle();
     ecdc = data;
   }
@@ -281,6 +355,7 @@ async function handlePractitionerSync(
   groupId: string | null,
   groupLabel: string | null,
   warnings: Warnings,
+  resolvedPractitionerId: string | null,
 ) {
   return upsertPractitioner(db, payload, {
     ecdcFkId,
@@ -289,6 +364,7 @@ async function handlePractitionerSync(
     warnings,
     status: null,
     preferNewName: false,
+    resolvedPractitionerId,
   });
 }
 
@@ -298,6 +374,7 @@ async function handleInterestedPractitionerSync(
   groupId: string | null,
   groupLabel: string | null,
   warnings: Warnings,
+  resolvedPractitionerId: string | null,
 ) {
   return upsertPractitioner(db, payload, {
     ecdcFkId: null,
@@ -306,6 +383,7 @@ async function handleInterestedPractitionerSync(
     warnings,
     status: "interested",
     preferNewName: true,
+    resolvedPractitionerId,
   });
 }
 
@@ -319,18 +397,29 @@ async function upsertPractitioner(
     warnings: Warnings;
     status: string | null;
     preferNewName: boolean;
+    resolvedPractitionerId: string | null;
   },
 ) {
-  const { ecdcFkId, groupId, groupLabel, warnings, status, preferNewName } = options;
+  const { ecdcFkId, groupId, groupLabel, warnings, status, preferNewName, resolvedPractitionerId } = options;
   const selectedValue = textValue(payload.ecdc_practitioner);
   const newName = textValue(payload.practitioner_new);
   const selectedIsMissing = isMissingChoice(selectedValue);
   const selectedUuid = canonicalUuid(selectedValue);
 
   let practitioner: { id: string; name?: string | null } | null = null;
-  let name = preferNewName ? newName : selectedIsMissing ? newName : selectedValue;
+  let name: string | null = preferNewName ? newName : selectedIsMissing ? newName : selectedValue;
 
-  if (!selectedIsMissing && selectedUuid) {
+  if (resolvedPractitionerId) {
+    const { data, error } = await db
+      .from("practitioners").select("id, name").eq("id", resolvedPractitionerId).maybeSingle();
+    if (error) warnings.push(`Ledger practitioner lookup failed: ${error.message}`);
+    if (data) {
+      practitioner = data;
+      name = newName || data.name || name;
+    }
+  }
+
+  if (!practitioner && !selectedIsMissing && selectedUuid) {
     practitioner = await findRecordByExternalKey(
       db,
       "practitioners",
@@ -345,7 +434,7 @@ async function upsertPractitioner(
       await logUnmatched(db, textValue(payload._uuid) || null, "ecdc_practitioner", selectedValue, warnings);
       return null;
     }
-  } else if (!selectedIsMissing && selectedValue) {
+  } else if (!practitioner && !selectedIsMissing && selectedValue) {
     const { data } = await db.from("practitioners").select("id, name").ilike("name", selectedValue).maybeSingle();
     practitioner = data;
   }
@@ -466,6 +555,57 @@ async function lookupPractitionerOnly(
   return null;
 }
 
+async function loadResolutionDecision(
+  db: SupabaseClientLike,
+  instanceId: string,
+  warnings: Warnings,
+): Promise<ResolutionDecision | null> {
+  const { data, error } = await db
+    .from("kobo_resolution_ledger")
+    .select("canonical_ecdc_id, canonical_practitioner_ids, responsible_staff_user_id, reason_code, decision")
+    .eq("source_identity", instanceId)
+    .maybeSingle();
+  if (error) {
+    warnings.push(`Resolution-ledger lookup failed: ${error.message}`);
+    return null;
+  }
+  return data as ResolutionDecision | null;
+}
+
+async function syncVisitParticipants(
+  db: SupabaseClientLike,
+  visitId: string,
+  primaryPractitionerId: string | null,
+  practitionerIds: string[],
+  warnings: Warnings,
+) {
+  if (practitionerIds.length === 0) return;
+  const rows = practitionerIds.map((practitionerId) => ({
+    visit_id: visitId,
+    practitioner_id: practitionerId,
+    participation_role: practitionerId === primaryPractitionerId ? "primary" : "additional",
+  }));
+  const { error } = await db
+    .from("outreach_visit_practitioners")
+    .upsert(rows, { onConflict: "visit_id,practitioner_id" });
+  if (error) warnings.push(`Visit participant sync failed: ${error.message}`);
+}
+
+async function syncVisitSource(
+  db: SupabaseClientLike,
+  visitId: string,
+  instanceId: string,
+  warnings: Warnings,
+) {
+  const { error } = await db.from("outreach_visit_sources").upsert({
+    visit_id: visitId,
+    source_system: "kobo",
+    external_id: instanceId,
+    original_visit_id: visitId,
+  }, { onConflict: "source_system,external_id" });
+  if (error) warnings.push(`Visit source-lineage sync failed: ${error.message}`);
+}
+
 /* =========================================================================
    HELPERS: IDENTIFIERS + FIELD MAPPING
    ========================================================================= */
@@ -512,7 +652,7 @@ async function findRecordByExternalKey(
   rawValue: string,
   warnings: Warnings,
   label: string,
-) {
+): Promise<{ id: string; name: string | null } | null> {
   const { data: byCanonical, error: canonicalError } = await db
     .from(table)
     .select("id, name")
@@ -520,29 +660,17 @@ async function findRecordByExternalKey(
     .maybeSingle();
 
   if (canonicalError) warnings.push(`${label} UUID lookup failed: ${canonicalError.message}`);
-  if (byCanonical) return byCanonical;
+  if (byCanonical) return byCanonical as { id: string; name: string | null };
 
   const raw = textValue(rawValue).replace(/^uuid:/i, "").toLowerCase();
   if (!COMPACT_HEX_RE.test(raw)) return null;
 
   const rpcName = table === "practitioners" ? "resolve_practitioner_external_id" : "resolve_ecdc_external_id";
   const { data: byExternalKey, error: rpcError } = await db.rpc(rpcName, { raw_value: raw }).maybeSingle();
-  if (byExternalKey) return byExternalKey;
+  if (byExternalKey) return byExternalKey as { id: string; name: string | null };
   if (rpcError && rpcError.code !== "PGRST202") {
     warnings.push(`${label} external-key lookup failed: ${rpcError.message}`);
   }
-
-  const { data: records, error } = await db.from(table).select("id, name").limit(5000);
-  if (error) {
-    warnings.push(`${label} compact/hash lookup failed: ${error.message}`);
-    return null;
-  }
-
-  for (const record of records ?? []) {
-    const id = String(record.id);
-    if (id.replace(/-/g, "").toLowerCase() === raw) return record;
-  }
-
   return null;
 }
 
@@ -601,10 +729,10 @@ async function logUnmatched(
     return;
   }
 
-  const { error } = await db.from("kobo_unmatched").insert({
-    instance_id: instanceId,
-    field,
-    raw_value: rawValue,
+  const { error } = await db.rpc("record_kobo_unmatched", {
+    p_instance_id: instanceId,
+    p_field: field,
+    p_raw_value: rawValue === null || rawValue === undefined ? null : String(rawValue),
   });
 
   if (error) warnings.push(`Failed to log unmatched record: ${error.message}`);
@@ -620,7 +748,9 @@ export async function markProcessed(
     instance_id: instanceId,
     status,
     error_message: errorMessage ?? null,
-    warnings: warnings && warnings.length > 0 ? warnings : null,
+    warnings: warnings && warnings.length > 0 ? warnings.join("\n") : null,
+    warning_details: warnings && warnings.length > 0 ? warnings : null,
+    processor_version: PROCESSOR_VERSION,
     processed_at: new Date().toISOString(),
   }, {
     onConflict: "instance_id",

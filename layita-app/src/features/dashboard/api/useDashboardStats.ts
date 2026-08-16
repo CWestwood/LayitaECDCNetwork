@@ -59,7 +59,7 @@ export function useDashboardStats(year = new Date().getFullYear()) {
             id, 
             date, 
             outreach_type, 
-            practitioner:practitioners(name, ecdc:ecdc_id(name))
+            practitioner:practitioners!outreach_visits_practitioner_id_fkey(name, ecdc:ecdc_id(name))
           `)
           .is('deleted_at', null)
           .order('date', { ascending: false })

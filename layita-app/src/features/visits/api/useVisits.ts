@@ -40,7 +40,7 @@ const fetchVisits = async (): Promise<VisitRow[]> => {
     .from('outreach_visits')
     .select(`
       id, date, practitioner_id,
-      practitioner:practitioners (
+      practitioner:practitioners!outreach_visits_practitioner_id_fkey (
         id, name, contact_number1, contact_number2,
         ecdc:ecdc_id (id, name, area, number_children)
       ),

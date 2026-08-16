@@ -53,6 +53,7 @@ class FakeSupabase {
         { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", group_name: "SS Group 1 (2023)" },
         { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", group_name: "Person interested in joining ECDC Database" },
       ],
+      profiles: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", layita_staff_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
       ecdc_list: [{ id: "11111111-1111-4111-8111-111111111111", name: "Existing ECDC", area: "Old Area" }],
       practitioners: [
         {
@@ -63,8 +64,11 @@ class FakeSupabase {
       ],
       training: [],
       outreach_visits: [],
+      outreach_visit_practitioners: [],
+      outreach_visit_sources: [],
       kobo_unmatched: [],
       kobo_processed: [],
+      kobo_resolution_ledger: [],
     };
   }
 
@@ -87,6 +91,19 @@ class FakeSupabase {
         data: findByExternalKey(this.tables.ecdc_list, args.raw_value),
         error: null,
       });
+    }
+
+    if (name === "record_kobo_unmatched") {
+      const existing = this.tables.kobo_unmatched.find((row) =>
+        row.instance_id === args.p_instance_id && row.field === args.p_field &&
+        String(row.raw_value ?? "") === String(args.p_raw_value ?? "") && !row.resolved_at
+      );
+      if (existing) existing.occurrence_count = (existing.occurrence_count || 1) + 1;
+      else this.tables.kobo_unmatched.push({
+        id: crypto.randomUUID(), instance_id: args.p_instance_id, field: args.p_field,
+        raw_value: args.p_raw_value, occurrence_count: 1,
+      });
+      return thenable({ data: existing?.id ?? this.tables.kobo_unmatched.at(-1).id, error: null });
     }
 
     return thenable({ data: null, error: { code: "PGRST202", message: "RPC not found" } });
@@ -191,15 +208,20 @@ class FakeQuery {
   }
 
   applyUpsert() {
-    const key = this.conflictKey;
-    let row = this.db.tables[this.table].find((candidate) => key && candidate[key] === this.payload[key]);
-    if (row) {
-      Object.assign(row, this.payload);
-    } else {
-      row = { id: crypto.randomUUID(), ...this.payload };
-      this.db.tables[this.table].push(row);
-    }
-    return { data: row, error: null };
+    const payloads = Array.isArray(this.payload) ? this.payload : [this.payload];
+    const keys = String(this.conflictKey || "").split(",").filter(Boolean);
+    const results = payloads.map((payload) => {
+      let row = this.db.tables[this.table].find((candidate) =>
+        keys.length > 0 && keys.every((key) => candidate[key] === payload[key])
+      );
+      if (row) Object.assign(row, payload);
+      else {
+        row = { id: crypto.randomUUID(), ...payload };
+        this.db.tables[this.table].push(row);
+      }
+      return row;
+    });
+    return { data: Array.isArray(this.payload) ? results : results[0], error: null };
   }
 }
 
@@ -294,6 +316,48 @@ async function run() {
   await processSubmission("test-compact", basePayload({ comments: "reprocessed" }), fake);
   assert.equal(fake.tables.outreach_visits.filter((v) => v.kobo_instance_id === "test-compact").length, 1);
   assert.equal(fake.tables.outreach_visits.find((v) => v.kobo_instance_id === "test-compact").comments, "reprocessed");
+
+  const ledgerInstance = crypto.randomUUID();
+  fake.tables.kobo_resolution_ledger.push({
+    source_identity: ledgerInstance,
+    canonical_ecdc_id: "11111111-1111-4111-8111-111111111111",
+    canonical_practitioner_ids: [
+      "22222222-2222-4222-8222-222222222222",
+      "44444444-4444-4444-8444-444444444444",
+    ],
+    responsible_staff_user_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    reason_code: "MANUAL_REVIEW_EXISTING_IDENTITIES_CONFIRMED",
+    decision: {},
+  });
+  fake.tables.practitioners.push({ id: "44444444-4444-4444-8444-444444444444", name: "Second Practitioner" });
+  const ledgerResult = await processSubmission(ledgerInstance, basePayload({
+    _uuid: ledgerInstance,
+    ecdc_practitioner: "not-the-canonical-name",
+  }), fake);
+  assert.equal(ledgerResult.status, "success");
+  assert.equal(ledgerResult.provenance.participant_count, 2);
+  assert.equal(fake.tables.outreach_visit_practitioners.filter((row) =>
+    row.visit_id === ledgerResult.visitId
+  ).length, 2);
+
+  const quarantineInstance = crypto.randomUUID();
+  fake.tables.kobo_resolution_ledger.push({
+    source_identity: quarantineInstance,
+    canonical_ecdc_id: null,
+    canonical_practitioner_ids: [],
+    responsible_staff_user_id: null,
+    reason_code: "QUARANTINED_MISSED_VISIT",
+    decision: {},
+  });
+  const quarantined = await processSubmission(quarantineInstance, basePayload({ _uuid: quarantineInstance }), fake);
+  assert.equal(quarantined.status, "quarantined");
+  assert.equal(fake.tables.outreach_visits.some((visit) => visit.kobo_instance_id === quarantineInstance), false);
+
+  await processSubmission("test-unmatched", basePayload({
+    ecdc_practitioner: "33333333-3333-4333-8333-333333333333",
+  }), fake);
+  assert.equal(fake.tables.kobo_unmatched.length, 1);
+  assert.equal(fake.tables.kobo_unmatched[0].occurrence_count, 2);
 
   console.log("process-payload fixture tests passed");
 }

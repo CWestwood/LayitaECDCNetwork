@@ -34,7 +34,7 @@ export default function OutreachVisits() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  const { data: visits = [], isLoading: loading } = useVisits();
+  const { data: visits = [], isLoading: loading, error } = useVisits();
 
   const visitRows = useMemo(
     () => visits.filter((visit) => !isUpdateType(visit.outreach_type)),
@@ -231,6 +231,10 @@ export default function OutreachVisits() {
             {loading ? (
               <div className="ov-loading">
                 <div className="spinner spinner--md" /> Loading visits...
+              </div>
+            ) : error ? (
+              <div className="ov-no-results" role="alert">
+                Outreach visits could not be loaded. {error.message}
               </div>
             ) : (
               <div className="ov-list-scroll">

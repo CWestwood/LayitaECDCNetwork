@@ -1,53 +1,58 @@
-import { markProcessed, processSubmission } from "../_shared/process-payload.ts";
+import { processSubmission } from "../_shared/process-payload.ts";
+import { beginProcessing, finishProcessing, sha256 } from "../_shared/processing-run.ts";
 import { supabase } from "../_shared/supabase-client.ts";
-Deno.serve(async (req)=>{
-  // This endpoint should only be callable by administrators
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
   const authHeader = req.headers.get("Authorization");
-  const { data: { user } } = await supabase.auth.getUser(authHeader?.replace("Bearer ", "") ?? "");
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user?.id).maybeSingle();
-  if (profile?.role !== "administrator") {
-    return json({
-      error: "Forbidden"
-    }, 403);
+  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
+  const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+  if (userError || !user) return json({ error: "Unauthorized" }, 401);
+
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  if (profile?.role !== "administrator") return json({ error: "Forbidden" }, 403);
+
+  const request = await req.json();
+  const requestedIds = request.instance_ids ?? (request.instance_id ? [request.instance_id] : []);
+  const ids = Array.from(new Set((requestedIds as unknown[]).map(String)));
+  if (ids.length === 0) return json({ error: "No instance_id(s) provided" }, 400);
+  if (ids.length > 50 || ids.some((id) => !UUID_RE.test(id))) {
+    return json({ error: "Provide at most 50 valid instance UUIDs" }, 400);
   }
-  // Accept either a single ID or a batch
-  const { instance_id, instance_ids } = await req.json();
-  const ids = instance_ids ?? (instance_id ? [
-    instance_id
-  ] : []);
-  if (ids.length === 0) {
-    return json({
-      error: "No instance_id(s) provided"
-    }, 400);
-  }
+
   const results = [];
-  for (const id of ids){
-    // Fetch the original raw payload
-    const { data: raw } = await supabase.from("kobo_raw_submissions").select("payload").eq("instance_id", id).maybeSingle();
-    if (!raw) {
-      results.push({
-        id,
-        status: "failed",
-        error: "Raw submission not found"
-      });
+  for (const id of ids) {
+    const { data: raw, error } = await supabase
+      .from("kobo_raw_submissions")
+      .select("payload, payload_hash")
+      .eq("instance_id", id)
+      .maybeSingle();
+    if (error || !raw?.payload) {
+      results.push({ id, status: "failed", error: "Raw submission not found" });
       continue;
     }
-    // Reset status so markProcessed can upsert cleanly
-    await markProcessed(id, "failed", "Reprocessing started");
-    const result = await processSubmission(id, raw.payload);
-    await markProcessed(id, result.status, result.error, result.warnings);
-    results.push({
-      id,
-      ...result
-    });
-  }
-  return json({
-    results
-  }, 200);
-});
-const json = (body, status)=>new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "Content-Type": "application/json"
+
+    let runId: string | null = null;
+    try {
+      const payloadHash = raw.payload_hash ?? await sha256(JSON.stringify(raw.payload));
+      runId = await beginProcessing(id, "reprocess", payloadHash, user.id, true);
+      if (!runId) throw new Error("Processing run was not created");
+      const result = await processSubmission(id, raw.payload);
+      await finishProcessing(runId, result);
+      results.push({ id, ...result });
+    } catch (processingError) {
+      const message = processingError instanceof Error ? processingError.message : String(processingError);
+      if (runId) await finishProcessing(runId, { status: "failed", error: message }).catch(() => undefined);
+      results.push({ id, status: "failed", error: message });
     }
-  });
+  }
+  return json({ results }, 200);
+});
+
+const json = (body: unknown, status: number) => new Response(JSON.stringify(body), {
+  status,
+  headers: { "Content-Type": "application/json" },
+});

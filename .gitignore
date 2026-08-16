@@ -7,3 +7,5 @@ supabase/temp/
 
 # Local database backups may contain personal and authentication data.
 .local-backups/
+
+

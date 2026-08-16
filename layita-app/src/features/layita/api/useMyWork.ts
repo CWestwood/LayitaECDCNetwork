@@ -68,7 +68,7 @@ export function useMyWork() {
           .limit(12),
         supabase
           .from('outreach_visits')
-          .select('id, date, outreach_type, outreach_happened, source, practitioners(name)')
+          .select('id, date, outreach_type, outreach_happened, source, practitioners!outreach_visits_practitioner_id_fkey(name)')
           .eq('data_capturer_id', staff.id)
           .is('deleted_at', null)
           .order('date', { ascending: false })

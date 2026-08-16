@@ -24,6 +24,7 @@ interface Props {
 export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
+  const [reason, setReason] = useState('');
 
   // ── Dropdown options ─────────────────────────────────────────
   const [practitioners,          setPractitioners]          = useState<Practitioner[]>([]);
@@ -40,6 +41,7 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
   // ── Form state ───────────────────────────────────────────────
 
   const [form, setForm] = useState({
+    date:                  v.date ?? '',
     practitioner_name:     v.practitioner?.name || '',
     outreach_happened:     v.outreach_happened     ?? '',
     outreach_type:         v.outreach_type         ?? '',
@@ -121,29 +123,63 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
       finalPractitionerId = '';
     }
 
-    const { error: saveError, count } = await supabase
-      .from('outreach_visits')
-      .update({
-        practitioner_id:       finalPractitionerId        || null,
-        outreach_happened:     form.outreach_happened     || null,
-        outreach_type:         form.outreach_type         || null,
-        did_instead:           form.did_instead           || null,
-        parents_trained:       numOrNull(form.parents_trained),
-        parents_enrolled:      numOrNull(form.parents_enrolled),
-        children_books:        numOrNull(form.children_books),
-        books_per_child:       numOrNull(form.books_per_child),
-        books_to_practitioner: numOrNull(form.books_to_practitioner),
-        transport_km:          numOrNull(form.transport_km),
-        transport_cost:        numOrNull(form.transport_cost),
-        transport_type:        form.transport_type        || null,
-        comments:              form.comments              || null,
-      }, { count: 'exact' })
-      .eq('id', v.id);
+    if (reason.trim().length < 5) {
+      setError('Enter a short reason for this correction.');
+      setSaving(false);
+      return;
+    }
+
+    const candidateChanges: Record<string, string | number | null> = {
+      date: form.date || null,
+      practitioner_id: finalPractitionerId || null,
+      outreach_happened: form.outreach_happened || null,
+      outreach_type: form.outreach_type || null,
+      did_instead: form.did_instead || null,
+      parents_trained: numOrNull(form.parents_trained),
+      parents_enrolled: numOrNull(form.parents_enrolled),
+      children_books: numOrNull(form.children_books),
+      books_per_child: numOrNull(form.books_per_child),
+      books_to_practitioner: numOrNull(form.books_to_practitioner),
+      transport_km: numOrNull(form.transport_km),
+      transport_cost: numOrNull(form.transport_cost),
+      transport_type: form.transport_type || null,
+      comments: form.comments || null,
+    };
+    const original: Record<string, string | number | null> = {
+      date: v.date,
+      practitioner_id: initialPractitionerId || null,
+      outreach_happened: v.outreach_happened,
+      outreach_type: v.outreach_type,
+      did_instead: v.did_instead,
+      parents_trained: numOrNull(v.parents_trained),
+      parents_enrolled: numOrNull(v.parents_enrolled),
+      children_books: numOrNull(v.children_books),
+      books_per_child: numOrNull(v.books_per_child),
+      books_to_practitioner: numOrNull(v.books_to_practitioner),
+      transport_km: numOrNull(v.transport_km),
+      transport_cost: numOrNull(v.transport_cost),
+      transport_type: v.transport_type,
+      comments: v.comments,
+    };
+    const changes = Object.fromEntries(
+      Object.entries(candidateChanges).filter(([field, value]) => value !== original[field]),
+    );
+    if (Object.keys(changes).length === 0) {
+      setError('No fields have changed.');
+      setSaving(false);
+      return;
+    }
+
+    const { data, error: saveError } = await supabase.rpc('correct_outreach_visit', {
+      p_visit_id: v.id,
+      p_changes: changes,
+      p_reason: reason.trim(),
+    });
 
     setSaving(false);
 
     if (saveError) { setError(saveError.message); return; }
-    if (count === 0) { setError('Permission denied — you do not have permission to edit this visit.'); return; }
+    if (!data?.success) { setError(data?.code ?? 'The visit could not be corrected.'); return; }
 
     onSaved?.();
     onDone();
@@ -166,10 +202,10 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
       </div>
      
 
-      {/* Date — read-only */}
+      {/* Date corrections are recorded through the audited correction RPC. */}
       <div className="ov-edit-field">
         <label className="ov-edit-label">Date</label>
-        <div className="ov-edit-readonly">{v.date}</div>
+        <input className="ov-edit-input" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} />
       </div>
 
       {/* Practitioner */}
@@ -205,7 +241,7 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
       </div>
 
       {/* Did instead — only shown when outreach didn't happen */}
-      {form.outreach_happened === 'no' && (
+      {form.outreach_happened.toLowerCase() === 'no' && (
         <div className="ov-edit-field">
           <label className="ov-edit-label">What happened instead?</label>
           <input
@@ -276,13 +312,24 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
         />
       </div>
 
+      <div className="ov-edit-field">
+        <label className="ov-edit-label">Reason for correction</label>
+        <textarea
+          className="ov-edit-textarea"
+          rows={2}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Required for the audit history"
+        />
+      </div>
+
       {error && <div className="ov-edit-error">{error}</div>}
 
       <div className="ov-edit-form__footer">
         <button className="ov-edit-btn ov-edit-btn--ghost" onClick={onDone} disabled={saving}>
           Cancel
         </button>
-        <button className="ov-edit-btn ov-edit-btn--primary" onClick={handleSave} disabled={saving}>
+        <button className="ov-edit-btn ov-edit-btn--primary" onClick={handleSave} disabled={saving || reason.trim().length < 5}>
           {saving ? 'Saving…' : 'Save changes'}
         </button>
       </div>

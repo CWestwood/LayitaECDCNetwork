@@ -549,24 +549,46 @@ Validation completed against a disposable PostgreSQL 17 Supabase container loade
 - the Edge processor fixture, frontend lint, and production build pass; and
 - the known large-bundle warning remains a later frontend-foundation item.
 
-The full migration history now also applies from zero in an isolated, explicitly named PostgreSQL 17 Supabase container, and the Phase 1 database contract suite passes on that clean schema. This avoids modifying the separate running local Supabase stack. The CLI’s optional final linked-schema comparison timed out, so a linked staging smoke test is still pending; nothing in Phase 1 has been applied to production.
+The full migration history now also applies from zero in an isolated, explicitly named PostgreSQL 17 Supabase container, and the Phase 1 database contract suite passes on that clean schema. This avoids modifying the separate running local Supabase stack. The owner subsequently completed a staging rollout smoke test. That test exposed an ambiguous PostgREST practitioner embed after the multi-practitioner junction was added; the frontend now names the primary-practitioner FK explicitly and displays query errors rather than presenting them as empty filter results. Nothing in Phase 1 has been applied to production.
 
-**Exit gate status:** implementation, clean-history and restored-data migrations, contract/RPC tests, procedural lint, type generation, Edge fixture, frontend lint, and build pass on the branch. Only the linked-staging gate remains open and requires a staging project target.
+**Exit gate status:** implementation, clean-history and restored-data migrations, contract/RPC tests, procedural lint, type generation, Edge fixture, frontend lint/build, and the owner’s staging database smoke test pass. The outreach relationship regression is repaired on the branch and requires the next frontend staging deployment for confirmation.
 
 ### Phase 2 — Stabilize ingestion and data quality
 
-1. Define and test the webhook authentication contract end to end: align `KOBO_WEBHOOK_SECRET` with the production secret inventory, fail closed when absent, verify Kobo gateway-JWT/header support, and remove or document the unused `KOBO_TOKEN_LAYITA` and `KOBO_TOKEN_REHAB` names.
-2. Expand fixtures to every Kobo branch and actual XLSForm field path.
-3. Make unmatched logging idempotent.
-4. Validate UUID/name protection and clean the remaining bad ECDC.
-5. Reprocess the 53 failed/partial submissions in controlled batches after dry-run/reporting support exists.
-6. Work through the 27 unresolved unmatched entries.
-7. Add system actor, provenance, and correction reason fields/events.
-8. Build a raw-to-processed-to-visible reconciliation report so missing website records can be identified without manual database comparison.
-9. Add duplicate-visit candidate detection that compares Kobo instance, date, practitioner(s), ECDC, staff, and activity totals.
-10. Resolve the specific 29 July, 30 April, 21 April, 5 June, and misclassified `Other` cases through the new audited workflows.
+Branch implementation status:
 
-**Exit gate:** new submissions normalize deterministically; failed/partial/unmatched queues are actionable; reprocessing cannot duplicate visits.
+- [x] Define a fail-closed webhook contract using a dedicated `KOBO_WEBHOOK_SECRET`, constant-time header comparison, POST-only handling, and a 2 MiB payload limit. `kobo-fetch` is configured with gateway JWT verification disabled because Kobo authenticates with the custom secret; `reprocess-kobo` retains JWT verification and an administrator-role check. Do not reuse the outgoing `KOBO_TOKEN_LAYITA` or `KOBO_TOKEN_REHAB` API tokens as the inbound webhook secret.
+- [ ] Expand fixtures to every actual XLSForm branch. Current fixtures cover mapping, compact/hash IDs, caregiver/support-style lookup, interested practitioners, unmatched IDs, negative transport, duplicate delivery, ledger multi-practitioner overrides, quarantine, and authentication. Direct workbook inspection remains pending because the required spreadsheet artifact runtime was unavailable in this implementation session.
+- [x] Make unmatched logging idempotent with one open issue per submission/field/value, occurrence counts, last-seen timestamps, and an atomic service-only RPC.
+- [x] Accept PostgreSQL/deterministic-hash UUID shapes, prevent future UUID-like ECDC names, and migrate the one deterministic malformed ECDC into its referenced canonical ECDC with an audit record.
+- [x] Add controlled processing runs with payload hashes, receipt counts, immutable attempts, processor versions, actors, terminal status, result IDs, warnings, and provenance. Reprocessing is capped at 50 validated instance IDs per request and is safe against duplicate visit creation.
+- [ ] Reprocess the existing failed/partial submissions only after the Phase 2 migration, Edge Functions, and reconciliation UI reach staging. The tooling is complete; the data operation is intentionally not embedded in a migration.
+- [ ] Resolve the existing unmatched entries after importing and reviewing the supplied ledger. The ignored local ledger dry run validates 145 decisions against staging: 91 distinct practitioner IDs and 81 distinct ECDC IDs exist, with zero missing canonical references; 52 decisions are explicitly quarantined. No ledger data has been committed or imported.
+- [x] Add explicit system/user/webhook/ledger actor types, source/correlation/provenance fields, correction reasons, deletion actors, and immutable processing/resolution events.
+- [x] Add the security-invoker `kobo_reconciliation` view and a frontend action queue covering pending, failed, partial, unmatched, quarantined, missing-visible-record, visible, and resolved states.
+- [x] Add multi-practitioner-aware duplicate candidate scoring, source lineage, an audited merge/void RPC that preserves the kept visit and all Kobo source IDs, and frontend keep-A/keep-B resolution controls with a required reason.
+- [x] Add an audited visit-correction RPC with an allowed-field list and changed-field-only frontend payloads. Visit date is now correctable with a required reason. The specific 29 July, 30 April, 21 April, 5 June, and misclassified `Other` records still require operator review through these workflows; their immutable IDs and intended outcomes must not be guessed in a migration.
+
+Validation completed on the branch:
+
+- the entire migration history applies from zero in an isolated PostgreSQL 17 Supabase container;
+- Phase 1 and Phase 2 database contract suites pass;
+- `plpgsql_check` reports no findings for the new processing, unmatched, correction, and duplicate-resolution functions;
+- Deno type-checks both Edge Function entry points;
+- processor and webhook-auth fixtures pass;
+- frontend lint and production build pass, retaining the known large-bundle warning; and
+- the ledger dry run passes without exposing or committing its personal-data payload.
+
+Required staging rollout order:
+
+1. Apply `20260816210000_phase2_ingestion_and_reconciliation.sql`.
+2. Create a new independent `KOBO_WEBHOOK_SECRET` in staging and configure the Kobo webhook to send it as `x-kobo-webhook-secret`. Retain the two existing Kobo API-token secrets until their external consumers are confirmed.
+3. Deploy `kobo-fetch` and `reprocess-kobo` using the checked-in function JWT settings.
+4. Deploy the frontend and confirm that the 275 active staging outreach visits load; the previously ambiguous embed is now explicit.
+5. Run `node supabase/scripts/import-phase2-resolution-ledger.cjs` for a dry run, then repeat with `--apply` only after reviewing its aggregate output.
+6. Use reconciliation to reprocess controlled batches, then resolve unmatched and duplicate candidates with reasons while comparing reporting totals before and after each batch.
+
+**Exit gate status:** the code path makes new delivery/reprocessing idempotent and exposes actionable reconciliation, unmatched, duplicate, and correction workflows. Actual staging deployment, ledger import, controlled historical reprocessing/data corrections, and complete XLSForm-derived fixture coverage remain rollout gates.
 
 ### Phase 3 — Establish the lean frontend foundation
 

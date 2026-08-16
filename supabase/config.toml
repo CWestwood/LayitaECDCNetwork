@@ -4,6 +4,12 @@
 # working directory name when running `supabase init`.
 project_id = "LayitaECDCNetwork"
 
+[functions.kobo-fetch]
+verify_jwt = false
+
+[functions.reprocess-kobo]
+verify_jwt = true
+
 [api]
 enabled = true
 # Port to use for the API URL.
