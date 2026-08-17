@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../auth/supabaseClient';
-import { canonicalOutreachOutcome, canonicalOutreachType } from '../../visits/reporting';
+import { canonicalOutreachOutcome, reportedOutreachType } from '../../visits/reporting';
 
 export interface DashboardStats {
   totalPractitioners: number;
@@ -79,7 +79,7 @@ export function useDashboardStats(year = new Date().getFullYear()) {
       let mappingVisits = 0;
 
       visits.forEach(v => {
-        const type = canonicalOutreachType(v.outreach_type);
+        const type = reportedOutreachType(v.outreach_type, v.outreach_happened, v.did_instead);
         if (!type) return;
         const staffName = v.data_capturer?.name || 'Unknown Staff';
         byType[type] = (byType[type] || 0) + 1;

@@ -8,6 +8,7 @@ import { fmtDate, resolveHappened, PencilIcon, PersonIcon, CloseIcon } from './_
 import VisitEditForm from './VisitEditForm';
 import { useDeleteVisit } from './api/useDeleteVisit';
 import { useAuth } from '../auth/useAuth';
+import { outreachOutcomeLabel, reportedOutreachType } from './reporting';
 
 interface Props {
   visit: VisitRow;
@@ -75,7 +76,7 @@ export default function VisitDetail({ visit: v, onClose }: Props) {
         <div className="ov-detail-hero__head">
           <div>
             <div className="ov-detail-date">{fmtDate(v.date)}</div>
-            <span className="ov-detail-type-badge">{formatLabel(v.outreach_type)}</span>
+            <span className="ov-detail-type-badge">{formatLabel(reportedOutreachType(v.outreach_type, v.outreach_happened, v.did_instead))}</span>
           </div>
 
           <div className="ov-detail-hero__actions">
@@ -127,10 +128,10 @@ export default function VisitDetail({ visit: v, onClose }: Props) {
               ? <polyline points="20 6 9 17 4 12" />
               : <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>}
           </svg>
-          {hap.label}
+          {outreachOutcomeLabel(v.outreach_happened, v.did_instead)}
         </div>
 
-        {v.did_instead && <div className="ov-did-instead">Instead: {v.did_instead}</div>}
+        {v.did_instead && <div className="ov-did-instead">Original plan: {formatLabel(v.outreach_type)}</div>}
       </div>
 
       {confirmDelete && (

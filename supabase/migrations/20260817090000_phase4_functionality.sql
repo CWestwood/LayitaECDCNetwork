@@ -37,9 +37,12 @@ SET search_path = public, pg_temp
 AS $$
   SELECT CASE
     WHEN lower(btrim(coalesce(happened, ''))) IN ('yes', 'true', 'happened', 'completed') THEN 'happened'
-    WHEN lower(btrim(coalesce(happened, ''))) IN ('not as planned', 'not_as_planned')
+    WHEN lower(btrim(coalesce(happened, ''))) IN (
+      'else', 'no, but i did something else', 'no but i did something else',
+      'different to planned', 'different_to_planned', 'not as planned', 'not_as_planned'
+    )
       OR lower(btrim(coalesce(did_instead, ''))) NOT IN ('', 'none', 'no', 'n/a', 'na', 'not applicable', 'not_applicable')
-      THEN 'not_as_planned'
+      THEN 'different_to_planned'
     ELSE 'did_not_happen'
   END
 $$;
@@ -49,7 +52,12 @@ WITH (security_invoker = true) AS
 SELECT
   v.id,
   v.date,
-  public.canonical_outreach_type(v.outreach_type) AS outreach_type_code,
+  CASE
+    WHEN public.canonical_outreach_outcome(v.outreach_happened, v.did_instead) = 'different_to_planned'
+      THEN coalesce(public.canonical_outreach_type(v.did_instead), public.canonical_outreach_type(v.outreach_type))
+    ELSE public.canonical_outreach_type(v.outreach_type)
+  END AS outreach_type_code,
+  public.canonical_outreach_type(v.outreach_type) AS planned_outreach_type_code,
   public.canonical_outreach_outcome(v.outreach_happened, v.did_instead) AS outcome_code,
   v.outreach_happened,
   v.did_instead,
@@ -94,7 +102,13 @@ LEFT JOIN LATERAL (
 ) participants ON true
 WHERE v.deleted_at IS NULL
   AND v.resolution_status = 'active'
-  AND public.canonical_outreach_type(v.outreach_type) IS NOT NULL;
+  AND (
+    public.canonical_outreach_type(v.outreach_type) IS NOT NULL
+    OR (
+      public.canonical_outreach_outcome(v.outreach_happened, v.did_instead) = 'different_to_planned'
+      AND public.canonical_outreach_type(v.did_instead) IS NOT NULL
+    )
+  );
 
 GRANT SELECT ON public.outreach_reporting TO authenticated, service_role;
 

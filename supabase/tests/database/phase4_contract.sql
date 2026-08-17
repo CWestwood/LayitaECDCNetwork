@@ -20,7 +20,8 @@ BEGIN
   IF public.canonical_outreach_type('training') <> 'caregiver_training'
      OR public.canonical_outreach_type('Update ECDC Details') IS NOT NULL
      OR public.canonical_outreach_outcome('no', 'not applicable') <> 'did_not_happen'
-     OR public.canonical_outreach_outcome('no', 'home visit') <> 'not_as_planned'
+     OR public.canonical_outreach_outcome('No, but I did something else', 'literacy_promotion') <> 'different_to_planned'
+     OR public.canonical_outreach_outcome('else', 'support') <> 'different_to_planned'
   THEN RAISE EXCEPTION 'Canonical outreach mapping contract failed'; END IF;
   IF has_function_privilege('anon', 'public.set_practitioner_lifecycle(uuid,text,text,text,date)', 'EXECUTE')
   THEN RAISE EXCEPTION 'Lifecycle RPC is exposed to anon'; END IF;
@@ -35,11 +36,15 @@ INSERT INTO public.profiles (id, name, role, email) VALUES
 ON CONFLICT (id) DO UPDATE SET role = 'administrator', is_active = true;
 
 DO $$
-DECLARE v_actor uuid := '00000000-0000-4000-8000-000000000014'; v_p1 uuid := gen_random_uuid(); v_p2 uuid := gen_random_uuid(); v_visit uuid := gen_random_uuid(); v_result jsonb; v_session uuid; v_course text := 'phase4_fixture';
+DECLARE v_actor uuid := '00000000-0000-4000-8000-000000000014'; v_p1 uuid := gen_random_uuid(); v_p2 uuid := gen_random_uuid(); v_visit uuid := gen_random_uuid(); v_alternative uuid := gen_random_uuid(); v_result jsonb; v_session uuid; v_course text := 'phase4_fixture';
 BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_actor::text, true);
   INSERT INTO public.practitioners(id, name, status) VALUES (v_p1, 'Phase 4 primary', 'active'), (v_p2, 'Phase 4 additional', 'active');
   INSERT INTO public.outreach_visits(id, date, practitioner_id, outreach_type, outreach_happened, source) VALUES (v_visit, current_date, v_p1, 'training', 'Yes', 'manual');
+  INSERT INTO public.outreach_visits(id, date, practitioner_id, outreach_type, outreach_happened, did_instead, source)
+  VALUES (v_alternative, current_date, v_p1, 'training', 'No, but I did something else', 'literacy_promotion', 'kobo');
+  IF NOT EXISTS (SELECT 1 FROM public.outreach_reporting WHERE id=v_alternative AND outreach_type_code='literacy_promotion' AND planned_outreach_type_code='caregiver_training' AND outcome_code='different_to_planned')
+  THEN RAISE EXCEPTION 'Alternative outreach reporting classification failed'; END IF;
   v_result := public.correct_outreach_visit(v_visit, '{"parents_trained":4,"children_books":6,"books_to_practitioner":2}'::jsonb, 'Phase 4 legacy edit compatibility');
   IF coalesce((v_result->>'success')::boolean, false) IS NOT TRUE OR NOT EXISTS (
     SELECT 1 FROM public.outreach_visits WHERE id=v_visit AND parents_attending=4 AND children_receiving_books=6 AND books_left_with_practitioner=2
