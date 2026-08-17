@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   EcdcOption,
   useDataQualitySummary,
@@ -10,9 +9,9 @@ import {
   PractitionerOption,
   useResolveUnmatched,
   useUnmatchedRecords,
-  useKoboReconciliation,
   useDuplicateVisitCandidates,
   useResolveDuplicateVisit,
+  type DuplicateVisitSummary,
 } from '../api/useDataQuality';
 import '../../../styles/data-quality.css';
 
@@ -201,39 +200,23 @@ function MergeRecordsPanel() {
   );
 }
 
-function ReconciliationPanel() {
-  const { data: rows = [], isLoading, error } = useKoboReconciliation();
+function VisitSummary({ label, visit }: { label: string; visit: DuplicateVisitSummary }) {
+  const parents = visit.parentsAttending == null
+    ? '-'
+    : visit.parentsEnrolled == null
+      ? String(visit.parentsAttending)
+      : `${visit.parentsAttending} attending / ${visit.parentsEnrolled} enrolled`;
+
   return (
-    <section className="dq-section">
-      <div className="dq-section__header">
-        <div>
-          <h2 className="dq-section__title">Kobo Reconciliation</h2>
-          <p className="dq-section__subtitle">
-            Raw submissions that are not yet safely represented by a visible record.
-          </p>
-        </div>
-        <Link className="dq-button" to="/kobo-monitor">Open Kobo Monitor</Link>
-      </div>
-      {isLoading ? <div className="dq-empty">Checking submission lineage...</div> : error ? (
-        <div className="dq-empty" role="alert">Reconciliation could not be loaded: {error.message}</div>
-      ) : rows.length === 0 ? <div className="dq-empty">Every accepted submission is accounted for.</div> : (
-        <div className="dq-table-wrap">
-          <table className="dq-table">
-            <thead><tr><th>Submission</th><th>State</th><th>Status</th><th>Attempts</th><th>Unmatched</th><th>Last error</th></tr></thead>
-            <tbody>{rows.map((row) => (
-              <tr key={row.instance_id}>
-                <td className="dq-mono">{row.instance_id}</td>
-                <td>{row.reconciliation_state.replaceAll('_', ' ')}</td>
-                <td>{row.processing_status ?? 'Pending'}</td>
-                <td>{row.attempt_count ?? 0}</td>
-                <td>{row.unresolved_count}</td>
-                <td>{row.error_message || '-'}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      )}
-    </section>
+    <div className="dq-visit-summary">
+      <strong className="dq-visit-summary__label">{label}</strong>
+      <span><b>Date:</b> {visit.date ?? '-'}</span>
+      <span><b>Practitioner:</b> {visit.practitionerNames.join(', ') || 'Unlinked'}</span>
+      <span><b>ECDC:</b> {visit.ecdcName || 'Unlinked'}</span>
+      <span><b>Parents:</b> {parents}</span>
+      <span><b>Children involved:</b> {visit.childrenInvolved ?? '-'}</span>
+      <span><b>Data capturer:</b> {visit.dataCapturerName || '-'}</span>
+    </div>
   );
 }
 
@@ -257,16 +240,15 @@ function DuplicateVisitsPanel() {
       ) : rows.length === 0 ? <div className="dq-empty">No high-confidence duplicate visits found.</div> : (
         <div className="dq-table-wrap">
           <table className="dq-table">
-            <thead><tr><th>Date</th><th>Confidence</th><th>Visit A</th><th>Visit B</th><th>Reason and action</th></tr></thead>
+            <thead><tr><th>Confidence</th><th>Visit A</th><th>Visit B</th><th>Reason and action</th></tr></thead>
             <tbody>{rows.map((row) => {
               const key = `${row.visit_a_id}:${row.visit_b_id}`;
               const reason = reasons[key] ?? '';
               return (
                 <tr key={key}>
-                  <td>{row.date}</td>
                   <td>{row.confidence_score}%</td>
-                  <td className="dq-mono">{row.visit_a_id}</td>
-                  <td className="dq-mono">{row.visit_b_id}</td>
+                  <td><VisitSummary label="Visit A" visit={row.visitA} /></td>
+                  <td><VisitSummary label="Visit B" visit={row.visitB} /></td>
                   <td>
                     <input
                       className="dq-search"
@@ -277,11 +259,11 @@ function DuplicateVisitsPanel() {
                     <div className="dq-actions">
                       <button className="dq-button dq-button--primary" disabled={reason.trim().length < 5 || resolveDuplicate.isPending}
                         onClick={() => resolveDuplicate.mutate({ keepId: row.visit_a_id, discardId: row.visit_b_id, reason })}>
-                        Keep A
+                        Keep visit A
                       </button>
                       <button className="dq-button" disabled={reason.trim().length < 5 || resolveDuplicate.isPending}
                         onClick={() => resolveDuplicate.mutate({ keepId: row.visit_b_id, discardId: row.visit_a_id, reason })}>
-                        Keep B
+                        Keep visit B
                       </button>
                     </div>
                   </td>
@@ -316,25 +298,9 @@ export default function DataQualityPage() {
 
   return (
     <>
-        <section className="dq-metrics" aria-label="Data quality summary">
-          {metricsLoading ? (
-            <div className="dq-empty">Loading quality checks...</div>
-          ) : (
-            metrics.map((metric) => (
-              <div key={metric.metric_key} className={`dq-metric dq-metric--${metric.severity}`}>
-                <span className="dq-metric__label">{metric.label}</span>
-                <strong className="dq-metric__value">{metric.value}</strong>
-                <span className="dq-metric__severity">{severityLabel(metric.severity)}</span>
-              </div>
-            ))
-          )}
-        </section>
-
-        <ReconciliationPanel />
+        <MergeRecordsPanel />
 
         <DuplicateVisitsPanel />
-
-        <MergeRecordsPanel />
 
         <section className="dq-section">
           <div className="dq-section__header">
@@ -437,6 +403,21 @@ export default function DataQualityPage() {
             </div>
           )}
         </section>
+
+        <section className="dq-metrics" aria-label="Data quality summary">
+          {metricsLoading ? (
+            <div className="dq-empty">Loading quality checks...</div>
+          ) : (
+            metrics.map((metric) => (
+              <div key={metric.metric_key} className={`dq-metric dq-metric--${metric.severity}`}>
+                <span className="dq-metric__label">{metric.label}</span>
+                <strong className="dq-metric__value">{metric.value}</strong>
+                <span className="dq-metric__severity">{severityLabel(metric.severity)}</span>
+              </div>
+            ))
+          )}
+        </section>
+
     </>
   );
 }

@@ -185,6 +185,77 @@
   gap: 8px;
 }
 
+.dq-visit-summary {
+  display: grid;
+  min-width: 220px;
+  gap: 4px;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.dq-visit-summary__label {
+  margin-bottom: 2px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.dq-visit-summary b {
+  color: #374151;
+  font-weight: 650;
+}
+
+.kobo-summary {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.kobo-summary strong,
+.kobo-summary span,
+.kobo-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kobo-summary strong {
+  color: #111827;
+  font-size: 13px;
+}
+
+.kobo-summary span,
+.kobo-summary small,
+.audit-event__when small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.audit-event__when {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.kobo-raw {
+  max-height: 420px;
+  overflow: auto;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #111827;
+  color: #f9fafb;
+}
+
+.kobo-raw pre {
+  margin: 0;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .dq-button {
   min-height: 34px;
   padding: 0 12px;
@@ -297,6 +368,18 @@
 
   .dq-merge-selectors {
     grid-template-columns: 1fr;
+  }
+
+  .audit-event__header {
+    align-items: flex-start;
+  }
+
+  .audit-event__right {
+    align-items: flex-start;
+  }
+
+  .audit-event__when small {
+    display: none;
   }
 }
 

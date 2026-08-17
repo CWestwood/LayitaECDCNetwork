@@ -18,7 +18,19 @@ export interface KoboSubmissionRow {
   outreach_type: string | null;
   processing_state: string;
   processing_seconds: number | null;
+  parents_attending: string | null;
+  parents_enrolled: string | null;
+  children_involved: string | null;
   payload: Json | null;
+}
+
+function scalarPayloadValue(payload: ReturnType<typeof asJsonObject>, ...paths: string[]): string | null {
+  for (const path of paths) {
+    const value = payload?.[path];
+    if (typeof value === 'string' && value.trim()) return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  }
+  return null;
 }
 
 export async function fetchSubmissions(): Promise<KoboSubmissionRow[]> {
@@ -69,7 +81,10 @@ export async function fetchSubmissions(): Promise<KoboSubmissionRow[]> {
       ecdc_name: ecdcStr || sub.ecdc_name,
       practitioner_name: pracStr || sub.practitioner_name,
       data_capturer: sub.data_capturer ? (staffMap.get(sub.data_capturer) || sub.data_capturer) : sub.data_capturer,
-      outreach_type: sub.outreach_type ? (typeMap.get(sub.outreach_type) || sub.outreach_type) : sub.outreach_type
+      outreach_type: sub.outreach_type ? (typeMap.get(sub.outreach_type) || sub.outreach_type) : sub.outreach_type,
+      parents_attending: scalarPayloadValue(p, 'support/parents_present', 'parents_present', 'parents_trained'),
+      parents_enrolled: scalarPayloadValue(p, 'support/parents_enrolled', 'parents_enrolled'),
+      children_involved: scalarPayloadValue(p, 'support/bookdash_children', 'bookdash_children', 'children_books'),
     }];
   });
 }
