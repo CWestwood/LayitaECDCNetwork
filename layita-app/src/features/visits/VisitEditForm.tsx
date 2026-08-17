@@ -1,8 +1,9 @@
 // src/features/visits/VisitEditForm.tsx
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { VisitRow } from './api/useVisits';
 import { CloseIcon } from './_components';
-import { correctVisit, fetchVisitEditOptions } from './api/visitEdit';
+import { correctVisit, fetchVisitEditOptions, setVisitPractitioners } from './api/visitEdit';
 import type { KoboLabelOption, PractitionerOption } from './api/visitEdit';
 
 interface Props {
@@ -12,9 +13,13 @@ interface Props {
 }
 
 export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
+  const queryClient = useQueryClient();
+  const initialPractitionerId = v.practitioner_id ?? v.practitioner?.id ?? '';
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
   const [reason, setReason] = useState('');
+  const initialParticipantIds = v.participants.length ? [...v.participants].sort((a) => a.participation_role === 'primary' ? -1 : 1).map((row) => row.practitioner?.id).filter((id): id is string => Boolean(id)) : initialPractitionerId ? [initialPractitionerId] : [];
+  const [additionalPractitionerIds, setAdditionalPractitionerIds] = useState<string[]>(initialParticipantIds.filter((id) => id !== initialPractitionerId));
 
   // ── Dropdown options ─────────────────────────────────────────
   const [practitioners,          setPractitioners]          = useState<PractitionerOption[]>([]);
@@ -23,10 +28,6 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
   const [optionsLoading,         setOptionsLoading]         = useState(true);
 
   // ── Derive the practitioner id from the visit row ────────────
-  const initialPractitionerId =
-    v.practitioner_id ?? v.practitioner?.id ??
-    '';
-
   // ── Form state ───────────────────────────────────────────────
 
   const [form, setForm] = useState({
@@ -141,20 +142,24 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
     const changes = Object.fromEntries(
       Object.entries(candidateChanges).filter(([field, value]) => value !== original[field]),
     );
-    if (Object.keys(changes).length === 0) {
+    const participantIds = [finalPractitionerId, ...additionalPractitionerIds.filter((id) => id !== finalPractitionerId)].filter(Boolean);
+    const participantsChanged = participantIds.join(',') !== initialParticipantIds.join(',');
+    if (Object.keys(changes).length === 0 && !participantsChanged) {
       setError('No fields have changed.');
       setSaving(false);
       return;
     }
 
     try {
-      await correctVisit(v.id, changes, reason.trim());
+      if (Object.keys(changes).length > 0) await correctVisit(v.id, changes, reason.trim());
+      if (participantsChanged) await setVisitPractitioners(v.id, participantIds, reason.trim());
     } catch (saveError) {
       setSaving(false);
       setError(saveError instanceof Error ? saveError.message : 'The visit could not be corrected.');
       return;
     }
     setSaving(false);
+    await queryClient.invalidateQueries({ queryKey: ['visits'] });
 
     onSaved?.();
     onDone();
@@ -285,6 +290,14 @@ export default function VisitEditForm({ visit: v, onDone, onSaved }: Props) {
           value={form.comments}
           onChange={(e) => set('comments', e.target.value)}
         />
+      </div>
+
+      <div className="ov-edit-field">
+        <label className="ov-edit-label">Additional practitioners</label>
+        <select className="ov-edit-select" multiple size={Math.min(6, Math.max(3, practitioners.length))} value={additionalPractitionerIds} onChange={(event) => setAdditionalPractitionerIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}>
+          {practitioners.filter((p) => p.id !== initialPractitionerId).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <small>Use Ctrl/Command to choose more than one. Metrics remain visit-level and are not multiplied.</small>
       </div>
 
       <div className="ov-edit-field">

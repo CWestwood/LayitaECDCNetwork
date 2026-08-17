@@ -1,285 +1,32 @@
-// src/features/visits/index.tsx
-
 import { useMemo, useState } from 'react';
-import { themeColors as t } from '../../lib/layita_colors';
-import { formatLabel } from '../../lib/format';
-import { useVisits, VisitRow } from './api/useVisits';
-import VisitRowComponent from './Visitrow';
+import { useSearchParams } from 'react-router-dom';
+import { formatDate, formatLabel } from '../../lib/format';
+import { useVisits } from './api/useVisits';
+import type { VisitRow } from './api/useVisits';
 import VisitDetail from './Visitdetail';
-import {
-  groupByMonth,
-  ChevronIcon,
-} from './_components';
-
-import '../../styles/shared.css';
+import { canonicalOutreachOutcome, canonicalOutreachType, downloadVisitCsv, OUTREACH_OUTCOMES, OUTREACH_TYPES, participantNames } from './reporting';
 import '../../styles/outreachVisits.css';
 
-type SortDir = 'asc' | 'desc';
-
-const FIXED_TYPES = ['literacy_promotion'];
-const UPDATE_TYPES = new Set(['update', 'update_ecdc_details', 'update ecdc details']);
-
-function isUpdateType(type: string | null | undefined) {
-  return UPDATE_TYPES.has(type?.toLowerCase().trim().replace(/\s+/g, '_') ?? '');
-}
-
+const value = (params: URLSearchParams, name: string) => params.get(name) ?? '';
 export default function OutreachVisits() {
-  const [selected, setSelected] = useState<VisitRow | null>(null);
-  const [search, setSearch] = useState('');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [activeTypes, setActiveTypes] = useState<string[]>([]);
-  const [activeHappened, setActiveHappened] = useState<string[]>([]);
-  const [staffFilter, setStaffFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const { data: visits = [], isLoading, error } = useVisits();
+  const [params, setParams] = useSearchParams(); const [selected, setSelected] = useState<VisitRow | null>(null);
+  const search = value(params, 'search'); const type = value(params, 'type'); const outcome = value(params, 'status'); const staff = value(params, 'staff'); const from = value(params, 'from'); const to = value(params, 'to');
+  const setFilter = (name: string, next: string) => setParams((current) => { const updated = new URLSearchParams(current); if (next) updated.set(name, next); else updated.delete(name); return updated; }, { replace: true });
+  const reportable = useMemo(() => visits.filter((visit) => canonicalOutreachType(visit.outreach_type)), [visits]);
+  const staffOptions = useMemo(() => [...new Map(reportable.filter((visit) => visit.data_capturer_id).map((visit) => [visit.data_capturer_id!, visit.data_capturer?.name || 'Unknown staff'])).entries()].sort((a,b) => a[1].localeCompare(b[1])), [reportable]);
+  const filtered = useMemo(() => reportable.filter((visit) => {
+    const query = search.trim().toLowerCase(); const names = participantNames(visit).join(' ').toLowerCase();
+    return (!query || names.includes(query) || visit.practitioner?.ecdc?.name?.toLowerCase().includes(query) || visit.comments?.toLowerCase().includes(query))
+      && (!type || canonicalOutreachType(visit.outreach_type) === type) && (!outcome || canonicalOutreachOutcome(visit.outreach_happened, visit.did_instead) === outcome)
+      && (!staff || visit.data_capturer_id === staff) && (!from || Boolean(visit.date && visit.date >= from)) && (!to || Boolean(visit.date && visit.date <= to));
+  }), [reportable, search, type, outcome, staff, from, to]);
+  const totals = useMemo(() => ({ parents: filtered.reduce((sum, visit) => sum + Number(visit.parents_attending ?? visit.parents_trained ?? 0), 0), books: filtered.reduce((sum, visit) => sum + Number(visit.books_distributed_to_children ?? visit.children_books ?? 0), 0), km: filtered.reduce((sum, visit) => sum + Number(visit.transport_km ?? 0), 0), cost: filtered.reduce((sum, visit) => sum + Number(visit.transport_cost ?? 0), 0) }), [filtered]);
 
-  const { data: visits = [], isLoading: loading, error } = useVisits();
-
-  const visitRows = useMemo(
-    () => visits.filter((visit) => !isUpdateType(visit.outreach_type)),
-    [visits],
-  );
-
-  const allTypes = useMemo(() => {
-    const seen = new Set<string>(FIXED_TYPES);
-    visitRows.forEach((v) => {
-      if (v.outreach_type) seen.add(v.outreach_type);
-    });
-    return Array.from(seen).sort((a, b) => formatLabel(a).localeCompare(formatLabel(b)));
-  }, [visitRows]);
-
-  const staffOptions = useMemo(() => {
-    const seen = new Map<string, string>();
-    visitRows.forEach((visit) => {
-      if (visit.data_capturer_id) {
-        seen.set(visit.data_capturer_id, visit.data_capturer?.name || 'Unknown Staff');
-      }
-    });
-    return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [visitRows]);
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
-
-    const list = visitRows.filter((v) => {
-      const matchSearch =
-        !q ||
-        v.practitioner?.name?.toLowerCase().includes(q) ||
-        v.practitioner?.ecdc?.name?.toLowerCase().includes(q) ||
-        v.data_capturer?.name?.toLowerCase().includes(q) ||
-        v.outreach_type?.toLowerCase().includes(q) ||
-        v.comments?.toLowerCase().includes(q);
-
-      const matchType = activeTypes.length === 0 || activeTypes.includes(v.outreach_type ?? '');
-      const matchHap = activeHappened.length === 0 || activeHappened.includes(
-        v.outreach_happened?.toLowerCase()?.trim() ?? 'null'
-      );
-      const matchStaff = staffFilter === 'all' || v.data_capturer_id === staffFilter;
-      const matchFrom = !dateFrom || (v.date != null && v.date >= dateFrom);
-      const matchTo = !dateTo || (v.date != null && v.date <= dateTo);
-
-      return matchSearch && matchType && matchHap && matchStaff && matchFrom && matchTo;
-    });
-
-    return [...list].sort((a, b) => {
-      const da = a.date ?? '', db = b.date ?? '';
-      return sortDir === 'desc' ? db.localeCompare(da) : da.localeCompare(db);
-    });
-  }, [visitRows, search, activeTypes, activeHappened, staffFilter, dateFrom, dateTo, sortDir]);
-
-  const grouped = useMemo(() => groupByMonth(filtered), [filtered]);
-
-  const stats = useMemo(() => {
-    const totalParents = filtered.reduce((s, v) => s + (Number(v.parents_trained) || 0), 0);
-    const totalEnrolledParents = filtered.reduce((s, v) => s + (Number(v.parents_enrolled) || 0), 0);
-    const attendanceRate = totalEnrolledParents > 0 ? Math.round((totalParents / totalEnrolledParents) * 100) : 0;
-
-    return {
-      total: filtered.length,
-      happened: filtered.filter((v) => v.outreach_happened?.toLowerCase() === 'yes').length,
-      totalParents,
-      attendanceRate,
-      totalBooks: filtered.reduce((s, v) => s + (Number(v.children_books) || 0), 0),
-      totalPractitionerBooks: filtered.reduce((s, v) => s + (Number(v.books_to_practitioner) || 0), 0),
-      totalKm: filtered.reduce((s, v) => s + (Number(v.transport_km) || 0), 0),
-      totalCost: filtered.reduce((s, v) => s + (Number(v.transport_cost) || 0), 0),
-    };
-  }, [filtered]);
-
-  const toggleType = (type: string) =>
-    setActiveTypes((prev) => prev.includes(type) ? prev.filter((x) => x !== type) : [...prev, type]);
-
-  const toggleHap = (h: string) =>
-    setActiveHappened((prev) => prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h]);
-
-  const handleSelect = (v: VisitRow) =>
-    setSelected((prev) => prev?.id === v.id ? null : v);
-
-  const clearFilters = () => {
-    setActiveTypes([]);
-    setActiveHappened([]);
-    setStaffFilter('all');
-    setDateFrom('');
-    setDateTo('');
-  };
-
-  const anyFilters = activeTypes.length > 0 || activeHappened.length > 0 || staffFilter !== 'all' || !!dateFrom || !!dateTo;
-
-  return (
-    <div className="page">
-
-      <div className="ov-main">
-        <div className="ov-topbar">
-          <div className="ov-topbar__title">Outreach Visits</div>
-          <div className="ov-topbar__controls">
-            <div className="ov-search-wrap">
-              <svg className="ov-search-icon" width="14" height="14" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" strokeWidth="2.2">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                className="ov-search-input"
-                placeholder="Search practitioner, ECDC, staff, type..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-
-            <input className="ov-select ov-date-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} aria-label="From date" />
-            <input className="ov-select ov-date-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} aria-label="To date" />
-
-            <select className="ov-select" value={staffFilter} onChange={(e) => setStaffFilter(e.target.value)} aria-label="Filter by staff member">
-              <option value="all">All staff</option>
-              {staffOptions.map(([id, name]) => (
-                <option key={id} value={id}>{name}</option>
-              ))}
-            </select>
-
-            <button
-              className="ov-select"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
-              onClick={() => setSortDir((d) => d === 'desc' ? 'asc' : 'desc')}
-            >
-              {sortDir === 'desc' ? 'Newest first' : 'Oldest first'}
-              <ChevronIcon dir={sortDir === 'desc' ? 'down' : 'up'} />
-            </button>
-          </div>
-        </div>
-
-        <div className="ov-filterbar">
-          <span className="ov-filter-label">Type</span>
-          {allTypes.map((type) => (
-            <button
-              key={type}
-              className={`ov-chip${activeTypes.includes(type) ? ' ov-chip--active' : ''}`}
-              onClick={() => toggleType(type)}
-            >
-              {formatLabel(type)}
-            </button>
-          ))}
-
-          <div className="ov-divider" />
-          <span className="ov-filter-label">Status</span>
-
-          {([
-            { key: 'yes', label: 'Happened' },
-            { key: 'no', label: 'Did not happen' },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              className={`ov-chip${activeHappened.includes(key) ? ' ov-chip--active' : ''}`}
-              onClick={() => toggleHap(key)}
-            >
-              {label}
-            </button>
-          ))}
-
-          {anyFilters && (
-            <button className="ov-filter-clear" onClick={clearFilters}>
-              Clear all
-            </button>
-          )}
-        </div>
-
-        <div className="ov-stats">
-          {([
-            { value: stats.total, label: 'Visits shown' },
-            { value: stats.happened, label: 'Completed', color: t.success },
-            { value: stats.totalParents, label: 'Parents trained' },
-            { value: `${stats.attendanceRate}%`, label: 'Attendance rate' },
-            { value: `${stats.totalBooks} (${stats.totalBooks})`, label: 'Books to children' },
-            { value: stats.totalPractitionerBooks, label: 'Books left with practitioners' },
-            { value: `${Math.round(stats.totalKm)} km`, label: 'Total distance' },
-            { value: `R${Math.round(stats.totalCost).toLocaleString()}`, label: 'Transport cost' },
-          ] as const).map((stat) => (
-            <div key={stat.label} className="ov-stat">
-              <div
-                className="ov-stat__value"
-                style={'color' in stat && stat.color ? { color: stat.color } : undefined}
-              >
-                {stat.value}
-              </div>
-              <div className="ov-stat__label">{stat.label}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="ov-body">
-          <div className={`ov-list-panel${!selected ? ' ov-list-panel--expanded' : ''}`}>
-            {loading ? (
-              <div className="ov-loading">
-                <div className="spinner spinner--md" /> Loading visits...
-              </div>
-            ) : error ? (
-              <div className="ov-no-results" role="alert">
-                Outreach visits could not be loaded. {error.message}
-              </div>
-            ) : (
-              <div className="ov-list-scroll">
-                {filtered.length === 0 ? (
-                  <div className="ov-no-results">No visits match your filters.</div>
-                ) : (
-                  <>
-                    <div className="ov-list-header">
-                      <div style={{ textAlign: 'center' }}>Date</div>
-                      <div style={{ textAlign: 'center' }}>Practitioner</div>
-                      <div style={{ textAlign: 'center' }}>Staff</div>
-                      <div style={{ textAlign: 'center' }}>Type</div>
-                      <div style={{ textAlign: 'center' }}>Status</div>
-                      <div style={{ textAlign: 'center' }}>Parents</div>
-                      <div style={{ textAlign: 'center' }}>Books</div>
-                      <div style={{ textAlign: 'center' }}>Distance</div>
-                      <div style={{ textAlign: 'center' }}>Notes</div>
-                    </div>
-                    {grouped.map(({ month, visits: groupVisits }) => (
-                      <div key={month}>
-                        <div className="ov-month-header">
-                          {month}
-                          <span className="ov-month-header__count">{groupVisits.length}</span>
-                        </div>
-                        {groupVisits.map((visit) => (
-                          <VisitRowComponent
-                            key={visit.id}
-                            v={visit}
-                            isSelected={selected?.id === visit.id}
-                            onClick={() => handleSelect(visit)}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {selected && (
-            <div className="ov-detail-panel ov-detail-panel--open">
-              <VisitDetail visit={selected} onClose={() => setSelected(null)} />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="page ov-report-page"><main className="ov-report-main">
+    <header className="ov-report-title"><div><h1>Outreach Visits</h1><p>Canonical programme reporting; mapping and ECDC-update submissions are excluded.</p></div><button className="lyt-btn ov-report-primary" disabled={!filtered.length} onClick={() => downloadVisitCsv(filtered)}>Export CSV</button></header>
+    <section className="ov-report-filters" aria-label="Visit filters"><input aria-label="Search visits" placeholder="Search practitioner, ECDC or notes" value={search} onChange={(event) => setFilter('search', event.target.value)} /><select aria-label="Outreach type" value={type} onChange={(event) => setFilter('type', event.target.value)}><option value="">All types</option>{OUTREACH_TYPES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}</select><select aria-label="Outcome" value={outcome} onChange={(event) => setFilter('status', event.target.value)}><option value="">All outcomes</option>{OUTREACH_OUTCOMES.map((item) => <option key={item} value={item}>{formatLabel(item)}</option>)}</select><select aria-label="Staff" value={staff} onChange={(event) => setFilter('staff', event.target.value)}><option value="">All staff</option>{staffOptions.map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select><input aria-label="From date" type="date" value={from} onChange={(event) => setFilter('from', event.target.value)} /><input aria-label="To date" type="date" value={to} onChange={(event) => setFilter('to', event.target.value)} /><button className="lyt-btn" onClick={() => setParams({})}>Clear</button></section>
+    <section className="ov-report-stats"><div><strong>{filtered.length}</strong><span>Visits</span></div><div><strong>{totals.parents}</strong><span>Parents attending</span></div><div><strong>{totals.books}</strong><span>Books distributed</span></div><div><strong>{Math.round(totals.km)} km</strong><span>Distance</span></div><div><strong>R{Math.round(totals.cost).toLocaleString()}</strong><span>Transport cost</span></div></section>
+    {isLoading ? <div className="ov-report-state">Loading visits…</div> : error ? <div className="ov-report-state" role="alert">Outreach visits could not be loaded. {error.message}</div> : !filtered.length ? <div className="ov-report-state">No results match the filters.</div> : <div className="ov-report-table-wrap"><table className="ov-report-table"><thead><tr><th>Date</th><th>Practitioner(s)</th><th>ECDC / area</th><th>Staff</th><th>Type / outcome</th><th>Parents</th><th>Books</th><th>Transport</th><th>Notes</th></tr></thead><tbody>{filtered.map((visit) => <tr key={visit.id} tabIndex={0} onClick={() => setSelected(visit)} onKeyDown={(event) => { if (event.key === 'Enter') setSelected(visit); }}><td data-label="Date">{formatDate(visit.date)}</td><td data-label="Practitioner(s)"><strong>{participantNames(visit).join(', ') || 'Unlinked'}</strong>{participantNames(visit).length > 1 && <small>{participantNames(visit).length} practitioners</small>}</td><td data-label="ECDC / area">{visit.practitioner?.ecdc?.name || '—'}<small>{visit.practitioner?.ecdc?.area || ''}</small></td><td data-label="Staff">{visit.data_capturer?.name || '—'}</td><td data-label="Type / outcome">{formatLabel(canonicalOutreachType(visit.outreach_type))}<small>{formatLabel(canonicalOutreachOutcome(visit.outreach_happened, visit.did_instead))}</small></td><td data-label="Parents">{visit.parents_attending ?? visit.parents_trained ?? '—'}<small>{visit.attendance_rate_percent == null ? '' : `${visit.attendance_rate_percent}% attendance`}</small></td><td data-label="Books">{visit.books_distributed_to_children ?? visit.children_books ?? '—'}<small>{visit.books_left_with_practitioner ?? visit.books_to_practitioner ?? 0} left</small></td><td data-label="Transport">{formatLabel(visit.transport_type)}<small>{visit.transport_km || 0} km · R{Number(visit.transport_cost || 0).toLocaleString()}</small></td><td data-label="Notes" className="ov-report-notes">{visit.comments || '—'}</td></tr>)}</tbody></table></div>}
+  </main>{selected && <aside className="ov-detail-panel ov-detail-panel--open"><VisitDetail visit={selected} onClose={() => setSelected(null)} /></aside>}</div>;
 }

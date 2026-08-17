@@ -1973,3 +1973,4 @@
     align-items: flex-end;
   }
 }
+.p2-lifecycle__form{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}.p2-lifecycle label,.p2-lifecycle__mapping{display:grid;gap:5px;font-size:.75rem;font-weight:650}.p2-lifecycle input,.p2-lifecycle select,.p2-lifecycle textarea{width:100%;min-height:36px;padding:7px;border:1px solid var(--color-border);border-radius:6px;background:var(--color-background);font:inherit}.p2-lifecycle textarea{min-height:70px;resize:vertical}.p2-lifecycle__history{display:grid;gap:5px;margin:12px 0}.p2-lifecycle__history>div{display:flex;justify-content:space-between;gap:10px;padding:7px;border-radius:5px;background:var(--color-background);font-size:.72rem}.p2-lifecycle__mapping{margin-top:12px}@media(max-width:600px){.p2-lifecycle__form{grid-template-columns:1fr}}

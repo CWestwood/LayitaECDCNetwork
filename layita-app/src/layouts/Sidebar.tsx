@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { toast } from "sonner";
@@ -21,7 +21,9 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }: Sid
         !(isAdmin && item.hideForAdmin)
       );
 
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('layita-sidebar-collapsed') === 'true' || defaultCollapsed);
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => { localStorage.setItem('layita-sidebar-collapsed', String(collapsed)); }, [collapsed]);
 
   const handleLogout = async () => {
     try {
@@ -78,6 +80,7 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }: Sid
               </NavLink>
             </li>
           ))}
+          {visibleItems.some((item) => !item.mobilePrimary) && <li className="sidebar__more-mobile"><button type="button" onClick={() => setMoreOpen((open) => !open)} aria-expanded={moreOpen} aria-label="More navigation"><span className="sidebar__nav-icon">•••</span><span className="sidebar__nav-label">More</span></button></li>}
 
           {/* Mobile-only logout button (hidden on desktop via CSS) */}
           <li className="sidebar__nav-logout-mobile">
@@ -101,6 +104,7 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }: Sid
           </li>
         </ul>
       </nav>
+      {moreOpen && <div className="sidebar__mobile-menu" role="dialog" aria-label="More navigation"><div className="sidebar__mobile-menu-head"><strong>More</strong><button onClick={() => setMoreOpen(false)} aria-label="Close more navigation">×</button></div>{visibleItems.filter((item) => !item.mobilePrimary).map((item) => <NavLink key={item.to} to={item.to} onClick={() => setMoreOpen(false)}>{item.icon}<span>{item.label}</span></NavLink>)}</div>}
 
       <div className="sidebar__footer">
         {footer && (

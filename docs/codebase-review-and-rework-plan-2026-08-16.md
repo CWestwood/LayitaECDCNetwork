@@ -627,6 +627,12 @@ Implement in this order:
 
 **Exit gate:** every row in the request mapping has an automated acceptance test and a successful role-appropriate browser test.
 
+**Implementation status (2026-08-17):** Implemented on the working branch as a combined Phase 4/5 review batch. Migration `20260817090000_phase4_functionality.sql` adds canonical outreach reporting, audited practitioner lifecycle/mapping-note and multi-practitioner RPCs, planning lifecycle/day-route structures, holiday-training sessions/attendance, and non-destructive staff lifecycle fields. The frontend now provides canonical filterable/exportable outreach reporting, multi-practitioner correction, bulk planning and lifecycle actions, a labelled straight-line route/cost estimate, training session rosters, practitioner status history and mapping notes, ECDC table/map access including chief/headman values and missing coordinates, dashboard drill-through, task-bucketed My Work with correction requests, and Auth-backed invitation/role/link/deactivation/reactivation/password-reset management. Existing Phase 2 quality, reconciliation, duplicate, reprocess and recycle-bin workflows remain the source of truth rather than being duplicated.
+
+The implementation decisions are: visit metrics remain visit-level when several practitioners participate; the visit's `parents_enrolled` is the attendance denominator; Interested/ECDC-update/mapping submissions remain in reconciliation/audit but outside programme reporting; unassigned plans remain valid; managers may manage training and practitioner lifecycle but planning and Auth-user administration remain administrator-only; normal removal uses archive/inactivation while existing administrator hard-delete remains available; route estimates are explicitly straight-line/manual planning estimates and do not claim road-routing accuracy; photo attachment transfer remains the separate authenticated follow-up workflow established in Phase 2.
+
+**Verification status:** a fresh isolated Supabase stack applied the full migration history through Phase 4; the Phase 4 SQL contract passed; `supabase db lint --local --level warning` reported no schema errors; the new admin Edge Function passed `deno check`; frontend lint, strict typecheck, 8 unit tests, and the production build pass. The owner-confirmed Phase 3 visual baseline remains intact. Authenticated role-by-role staging browser review is still the exit-gate item for this combined batch because no controllable browser was available during this implementation session.
+
 ### Phase 5 — UX, accessibility, and performance pass
 
 1. Test desktop, tablet, and phone layouts for every route.
@@ -636,6 +642,8 @@ Implement in this order:
 5. Measure route chunks, query counts, and list performance; optimize based on results.
 
 **Exit gate:** core workflows meet agreed accessibility and performance budgets and are usable by both office and field roles.
+
+**Implementation status (2026-08-17):** The combined pass adds persistent sidebar preference, per-route document titles, a mobile More menu so secondary/admin workflows remain reachable, keyboard-operable report and ECDC table rows, labelled controls, dialog semantics, visible focus, reduced-motion support, responsive tables/cards/forms, consistent loading/empty/error states, URL-backed reporting filters, safe CSV formula neutralization, route-level lazy loading, and on-demand heavy export libraries. The build continues to split features by route. Staging review should exercise desktop, tablet and phone widths for administrator, manager and data-capturer accounts, with particular attention to long practitioner/ECDC names and large attendance rosters.
 
 ### Phase 6 — Controlled rollout and cleanup
 
@@ -704,6 +712,4 @@ Every pull request should run formatting, TS-aware lint, strict typecheck, unit/
 
 ## Recommended immediate next action
 
-Proceed to the database-contract work before UI cleanup. Align and test the Kobo gateway/custom-secret authentication contract, then prepare a forward repair migration plus schema-contract/RLS tests. Keep changes isolated on the active development branch and merge only after the relevant functionality and gates pass. Once the database matches the agreed application contract, establish the shared app shell/auth/type/testing foundation, then complete the user-requested workflows while consolidating CSS and components.
-
-That sequence keeps the successful design concept, protects live data, avoids rebuilding broken assumptions, and reduces bloat as part of feature completion rather than through a risky standalone rewrite.
+Deploy the Phase 4 migration and `admin-users` Edge Function to staging, regenerate database types from that migrated staging schema, deploy the frontend branch, and review Phases 4/5 as one batch with administrator, manager, and data-capturer accounts at desktop and phone widths. Record feedback against the request mapping, verify canonical totals against the Phase 2 reconciliation counts, and test invitation email delivery plus deactivate/reactivate before merging. Keep the production database unchanged until this staging gate and a fresh backup are complete.

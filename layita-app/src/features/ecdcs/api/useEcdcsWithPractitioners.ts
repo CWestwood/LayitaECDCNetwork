@@ -15,21 +15,19 @@ export function useEcdcsWithPractitioners() {
     queryFn: async (): Promise<EcdcWithPractitioners[]> => {
       const { data, error } = await supabase
         .from('ecdc_list')
-        .select('id, name, area, latitude, longitude, practitioners(id, name, contact_number1, contact_number2, group:groups!practitioners_group_id_fkey(id, group_name), training(*))')
+        .select('id, name, area, latitude, longitude, chief, headman, practitioners(id, name, contact_number1, contact_number2, group:groups!practitioners_group_id_fkey(id, group_name), training(*))')
         .is('deleted_at', null)
-        .not('latitude', 'is', null)
-        .not('longitude', 'is', null)
         .order('name');
 
       if (error) throw new Error(error.message);
-      return (data ?? []).flatMap((ecdc) => {
-        if (ecdc.latitude === null || ecdc.longitude === null) return [];
-        return [{
+      return (data ?? []).map((ecdc) => ({
           id: ecdc.id,
           name: ecdc.name,
           area: ecdc.area,
           latitude: ecdc.latitude,
           longitude: ecdc.longitude,
+          chief: ecdc.chief,
+          headman: ecdc.headman,
           practitioners: ecdc.practitioners.map((practitioner) => ({
             id: practitioner.id,
             name: practitioner.name,
@@ -48,8 +46,7 @@ export function useEcdcsWithPractitioners() {
                 }
               : null,
           })),
-        }];
-      });
+        }));
     },
     staleTime: 1000 * 60 * 5,
   });

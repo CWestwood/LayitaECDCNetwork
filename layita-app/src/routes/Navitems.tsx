@@ -107,6 +107,17 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: "/training",
+    label: "Training",
+    capability: "manage_training",
+    mobilePrimary: false,
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="m3 7 9-4 9 4-9 4-9-4Z" /><path d="M7 9v6c3 3 7 3 10 0V9" /><path d="M21 7v6" />
+      </svg>
+    ),
+  },
+  {
     to: "/data-quality",
     label: "Quality & Audit",
     capability: "view_quality",

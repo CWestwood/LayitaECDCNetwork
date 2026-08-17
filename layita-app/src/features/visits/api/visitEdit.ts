@@ -52,3 +52,11 @@ export async function correctVisit(
   }
   return result;
 }
+
+export async function setVisitPractitioners(visitId: string, practitionerIds: string[], reason: string) {
+  const { data, error } = await supabase.rpc('set_outreach_visit_practitioners', { p_visit_id: visitId, p_practitioner_ids: practitionerIds, p_reason: reason });
+  if (error) throw new Error(error.message);
+  const result = requireRpcObject(data, 'Set visit practitioners');
+  if (rpcBoolean(result, 'success') !== true) throw new Error(rpcString(result, 'code', 'The visit participants could not be saved.'));
+  return result;
+}

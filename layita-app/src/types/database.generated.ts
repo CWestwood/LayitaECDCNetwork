@@ -741,19 +741,25 @@ export type Database = {
       layita_staff: {
         Row: {
           created_at: string
+          deactivated_at: string | null
           id: string
+          is_active: boolean
           name: string
           role: string | null
         }
         Insert: {
           created_at?: string
+          deactivated_at?: string | null
           id?: string
+          is_active?: boolean
           name: string
           role?: string | null
         }
         Update: {
           created_at?: string
+          deactivated_at?: string | null
           id?: string
+          is_active?: boolean
           name?: string
           role?: string | null
         }
@@ -1313,8 +1319,12 @@ export type Database = {
       planned_visits: {
         Row: {
           assigned_to: string | null
+          cancellation_reason: string | null
+          completed_visit_id: string | null
           created_at: string
+          created_by_id: string | null
           id: string
+          notes: string | null
           outreach_type: string
           practitioner_id: string
           practitioner_name: string
@@ -1324,8 +1334,12 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          cancellation_reason?: string | null
+          completed_visit_id?: string | null
           created_at?: string
+          created_by_id?: string | null
           id?: string
+          notes?: string | null
           outreach_type: string
           practitioner_id: string
           practitioner_name: string
@@ -1335,8 +1349,12 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          cancellation_reason?: string | null
+          completed_visit_id?: string | null
           created_at?: string
+          created_by_id?: string | null
           id?: string
+          notes?: string | null
           outreach_type?: string
           practitioner_id?: string
           practitioner_name?: string
@@ -1485,6 +1503,7 @@ export type Database = {
           group_id: string | null
           has_whatsapp: boolean | null
           id: string
+          mapping_comments: string | null
           name: string | null
           status: string
           updated_at: string | null
@@ -1503,6 +1522,7 @@ export type Database = {
           group_id?: string | null
           has_whatsapp?: boolean | null
           id?: string
+          mapping_comments?: string | null
           name?: string | null
           status?: string
           updated_at?: string | null
@@ -1521,6 +1541,7 @@ export type Database = {
           group_id?: string | null
           has_whatsapp?: boolean | null
           id?: string
+          mapping_comments?: string | null
           name?: string | null
           status?: string
           updated_at?: string | null
@@ -1552,24 +1573,33 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          deactivated_at: string | null
+          deactivated_by: string | null
           email: string | null
           id: string
+          is_active: boolean
           layita_staff_id: string | null
           name: string | null
           role: string | null
         }
         Insert: {
           created_at?: string
+          deactivated_at?: string | null
+          deactivated_by?: string | null
           email?: string | null
           id?: string
+          is_active?: boolean
           layita_staff_id?: string | null
           name?: string | null
           role?: string | null
         }
         Update: {
           created_at?: string
+          deactivated_at?: string | null
+          deactivated_by?: string | null
           email?: string | null
           id?: string
+          is_active?: boolean
           layita_staff_id?: string | null
           name?: string | null
           role?: string | null
@@ -1723,6 +1753,23 @@ export type Database = {
             referencedRelation: "practitioners"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      training_session_attendance: {
+        Row: { attendance_status: string; notes: string | null; practitioner_id: string; recorded_at: string; recorded_by_id: string | null; session_id: string }
+        Insert: { attendance_status?: string; notes?: string | null; practitioner_id: string; recorded_at?: string; recorded_by_id?: string | null; session_id: string }
+        Update: { attendance_status?: string; notes?: string | null; practitioner_id?: string; recorded_at?: string; recorded_by_id?: string | null; session_id?: string }
+        Relationships: [
+          { foreignKeyName: "training_session_attendance_practitioner_id_fkey"; columns: ["practitioner_id"]; isOneToOne: false; referencedRelation: "practitioners"; referencedColumns: ["id"] },
+          { foreignKeyName: "training_session_attendance_session_id_fkey"; columns: ["session_id"]; isOneToOne: false; referencedRelation: "training_sessions"; referencedColumns: ["id"] },
+        ]
+      }
+      training_sessions: {
+        Row: { course_code: string; created_at: string; created_by_id: string | null; evidence_url: string | null; facilitator: string | null; id: string; notes: string | null; session_date: string; status: string; title: string; venue: string | null }
+        Insert: { course_code: string; created_at?: string; created_by_id?: string | null; evidence_url?: string | null; facilitator?: string | null; id?: string; notes?: string | null; session_date: string; status?: string; title: string; venue?: string | null }
+        Update: { course_code?: string; created_at?: string; created_by_id?: string | null; evidence_url?: string | null; facilitator?: string | null; id?: string; notes?: string | null; session_date?: string; status?: string; title?: string; venue?: string | null }
+        Relationships: [
+          { foreignKeyName: "training_sessions_course_code_fkey"; columns: ["course_code"]; isOneToOne: false; referencedRelation: "training_courses"; referencedColumns: ["code"] },
         ]
       }
       training_courses: {
@@ -2024,6 +2071,13 @@ export type Database = {
       }
     }
     Functions: {
+      manage_planned_visit: {
+        Args: { p_assigned_to?: string | null; p_completed_visit_id?: string | null; p_notes?: string | null; p_outreach_type?: string | null; p_plan_id: string; p_reason?: string | null; p_scheduled_date?: string | null; p_status?: string | null; p_update_assignee?: boolean }
+        Returns: Json
+      }
+      set_outreach_visit_practitioners: { Args: { p_practitioner_ids: string[]; p_reason: string; p_visit_id: string }; Returns: Json }
+      set_practitioner_lifecycle: { Args: { p_comment?: string | null; p_effective_on?: string; p_practitioner_id: string; p_reason: string; p_status: string }; Returns: Json }
+      set_practitioner_mapping_comments: { Args: { p_comments: string; p_practitioner_id: string; p_reason: string }; Returns: Json }
       begin_kobo_processing: {
         Args: {
           p_actor_id?: string

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import { NAV_ITEMS } from '../routes/Navitems';
 import Sidebar from './Sidebar';
 
 interface ShellContextValue {
@@ -19,8 +20,13 @@ export function useAppShellFooter(footer: ReactNode) {
 }
 
 export default function AppShell() {
+  const location = useLocation();
   const [sidebarFooter, setSidebarFooter] = useState<ReactNode>(null);
   const contextValue = useMemo(() => ({ setSidebarFooter }), []);
+  useEffect(() => {
+    const label = NAV_ITEMS.find((item) => location.pathname.startsWith(item.to))?.label ?? 'Layita';
+    document.title = `${label} · Layita`;
+  }, [location.pathname]);
 
   return (
     <ShellContext.Provider value={contextValue}>

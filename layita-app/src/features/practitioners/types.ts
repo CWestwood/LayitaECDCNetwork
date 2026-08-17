@@ -7,6 +7,8 @@ export interface Practitioner {
   contact_number1: string | null;
   contact_number2: string | null;
   has_whatsapp: boolean | null;
+  status: string;
+  mapping_comments: string | null;
   dsd_funded: boolean | null;
   dsd_registered: boolean | null;
   group: { id: string; group_name: string } | null;

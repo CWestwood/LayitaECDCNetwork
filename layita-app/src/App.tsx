@@ -13,6 +13,7 @@ const EcdcMap = lazy(() => import('./features/ecdcs'));
 const Login = lazy(() => import('./features/auth/Login'));
 const OutreachVisits = lazy(() => import('./features/visits'));
 const OutreachPlanning = lazy(() => import('./features/visits/OutreachPlanning'));
+const Training = lazy(() => import('./features/training'));
 const Practitioners = lazy(() => import('./features/practitioners'));
 const QualityAuditShell = lazy(() => import('./features/layita/QualityAuditShell'));
 const Audit = lazy(() => import('./features/layita/audit'));
@@ -44,6 +45,7 @@ export default function App() {
               <Route path="/practitioners" element={<Practitioners />} />
               {capabilityRoute(ROUTE_ACCESS.myWork.capability, ROUTE_ACCESS.myWork.path, <MyWork />)}
               {capabilityRoute(ROUTE_ACCESS.planning.capability, ROUTE_ACCESS.planning.path, <OutreachPlanning />)}
+              {capabilityRoute(ROUTE_ACCESS.training.capability, ROUTE_ACCESS.training.path, <Training />)}
               {capabilityRoute(ROUTE_ACCESS.users.capability, ROUTE_ACCESS.users.path, <StaffManagement />)}
               {capabilityRoute(ROUTE_ACCESS.deleted.capability, ROUTE_ACCESS.deleted.path, <DeletedRecords />)}
               <Route element={<CapabilityRoute capability={ROUTE_ACCESS.quality.capability} />}>

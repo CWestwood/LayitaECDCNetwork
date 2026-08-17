@@ -33,6 +33,19 @@ export interface VisitRow {
   comments: string | null;
   source: string | null;
   kobo_instance_id: string | null;
+  parents_attending: number | null;
+  children_receiving_books: number | null;
+  books_distributed_to_children: number | null;
+  books_left_with_practitioner: number | null;
+  attendance_rate_percent: number | null;
+  public_transport_accessible: boolean | null;
+  bookdash_given: boolean | null;
+  photos_uploaded_to_album: boolean | null;
+  photo_album_url: string | null;
+  participants: {
+    participation_role: string;
+    practitioner: { id: string; name: string | null } | null;
+  }[];
 }
 
 const fetchVisits = async (): Promise<VisitRow[]> => {
@@ -49,6 +62,10 @@ const fetchVisits = async (): Promise<VisitRow[]> => {
       transport_type, transport_cost, transport_km,
       parents_enrolled, parents_trained,
       children_books, books_per_child, books_to_practitioner,
+      parents_attending, children_receiving_books, books_distributed_to_children,
+      books_left_with_practitioner, attendance_rate_percent,
+      public_transport_accessible, bookdash_given, photos_uploaded_to_album, photo_album_url,
+      participants:outreach_visit_practitioners(participation_role, practitioner:practitioners(id, name)),
       comments, source, kobo_instance_id
     `)
     .is('deleted_at', null)

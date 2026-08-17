@@ -104,3 +104,4 @@
     padding-bottom: 76px;
   }
 }
+.mw-header{display:flex;justify-content:space-between;align-items:flex-start;gap:15px}.mw-section--attention{border-color:var(--color-danger)}@media(max-width:600px){.mw-header{flex-direction:column}}

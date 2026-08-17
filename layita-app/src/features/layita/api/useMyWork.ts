@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { supabase } from '../../auth/supabaseClient';
 
 export interface MyPlannedVisit {
@@ -7,6 +8,7 @@ export interface MyPlannedVisit {
   practitioner_name: string;
   outreach_type: string;
   status: string;
+  notes: string | null;
 }
 
 export interface MyRecentVisit {
@@ -61,9 +63,9 @@ export function useMyWork() {
       const [plannedResult, recentResult] = await Promise.all([
         supabase
           .from('planned_visits')
-          .select('id, scheduled_date, practitioner_name, outreach_type, status')
+          .select('id, scheduled_date, practitioner_name, outreach_type, status, notes')
           .eq('assigned_to', staff.id)
-          .neq('status', 'completed')
+          .eq('status', 'planned')
           .order('scheduled_date', { ascending: true })
           .limit(12),
         supabase
@@ -86,4 +88,12 @@ export function useMyWork() {
     },
     staleTime: 1000 * 60 * 3,
   });
+}
+
+export function useRequestVisitCorrection() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: async ({ visitId, description }: { visitId: string; description: string }) => {
+    const { error } = await supabase.from('correction_requests').insert({ target_table: 'outreach_visits', target_id: visitId, issue_type: 'visit_correction', description, status: 'open' });
+    if (error) throw new Error(error.message);
+  }, onSuccess: async () => { await client.invalidateQueries({ queryKey: ['my-work'] }); toast.success('Correction request sent for review'); }, onError: (error) => toast.error(error.message) });
 }

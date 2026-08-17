@@ -3,13 +3,16 @@
    Requires layita_colors CSS variables to be defined upstream.
 ───────────────────────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap');
 
 @import './layita_colors.css';
 
 /* ── Reset ── */
 *, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: 'Raleway', sans-serif; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+:focus-visible { outline: 3px solid var(--color-secondary); outline-offset: 2px; }
+.sidebar__more-mobile,.sidebar__mobile-menu{display:none}
 
 /* ── Page shell ── */
 .app-shell {
@@ -493,6 +496,12 @@
   .sidebar__nav li[data-mobile-primary="false"] {
     display: none;
   }
+  .sidebar__nav li.sidebar__more-mobile { display:flex; }
+  .sidebar__more-mobile button { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; padding:6px 4px; border:0; background:transparent; font:inherit; color:var(--color-text-secondary); }
+  .sidebar__mobile-menu { display:grid; position:fixed; left:10px; right:10px; bottom:68px; z-index:900; padding:10px; border:1px solid var(--color-border); border-radius:12px; background:var(--color-bg-panel); box-shadow:0 14px 35px rgba(0,0,0,.2); grid-template-columns:repeat(2,1fr); gap:5px; }
+  .sidebar__mobile-menu-head { grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; padding:5px 8px; }
+  .sidebar__mobile-menu-head button { min-width:40px; min-height:40px; border:0; background:transparent; font-size:1.4rem; }
+  .sidebar__mobile-menu>a { display:flex; align-items:center; gap:8px; min-height:44px; padding:9px; border-radius:7px; color:var(--color-text); text-decoration:none; }
 
   .sidebar__nav a {
     flex: 1;
@@ -549,6 +558,8 @@
     height: 16px;
   }
 }
+
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -23,6 +23,8 @@ describe('role capabilities and protected routes', () => {
     expect(hasCapability('manager', ROUTE_ACCESS.quality.capability)).toBe(true);
     expect(hasCapability('manager', ROUTE_ACCESS.audit.capability)).toBe(true);
     expect(hasCapability('manager', ROUTE_ACCESS.myWork.capability)).toBe(true);
+    expect(hasCapability('manager', ROUTE_ACCESS.training.capability)).toBe(true);
+    expect(hasCapability('datacapturer', ROUTE_ACCESS.training.capability)).toBe(false);
   });
 
   it('limits data capturers and library users to their intended routes', () => {

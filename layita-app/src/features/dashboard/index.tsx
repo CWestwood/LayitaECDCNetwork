@@ -3,6 +3,7 @@ import { useDashboardStats } from './api/useDashboardStats';
 import '../../styles/shared.css';
 import '../../styles/dashboard.css';
 import { formatDate, formatLabel } from '../../lib/format';
+import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const currentYear = new Date().getFullYear();
@@ -59,30 +60,30 @@ export default function Dashboard() {
 
         <div className="da-body">
           <div className="da-stats-grid">
-            <div className="da-stat-card">
+            <Link className="da-stat-card" to="/practitioners">
               <span className="da-stat-card__label">Total Practitioners</span>
               <span className="da-stat-card__value">{stats.totalPractitioners}</span>
-            </div>
-            <div className="da-stat-card">
+            </Link>
+            <Link className="da-stat-card" to="/map">
               <span className="da-stat-card__label">Total ECDCs</span>
               <span className="da-stat-card__value">{stats.totalEcdcs}</span>
-            </div>
-            <div className="da-stat-card">
+            </Link>
+            <Link className="da-stat-card" to={`/visits?from=${year}-01-01&to=${year}-12-31`}>
               <span className="da-stat-card__label">Visits in {stats.selectedYear}</span>
               <span className="da-stat-card__value">{stats.visitsForYear.total}</span>
-            </div>
-            <div className="da-stat-card">
+            </Link>
+            <Link className="da-stat-card" to={`/visits?from=${year}-01-01&to=${year}-12-31&status=did_not_happen`}>
               <span className="da-stat-card__label">Missed Visits</span>
               <span className="da-stat-card__value da-stat-card__value--warning">
                 {stats.visitsForYear.didNotHappen}
               </span>
-            </div>
-            <div className="da-stat-card">
+            </Link>
+            <Link className="da-stat-card" to="/map">
               <span className="da-stat-card__label">New Sites Mapped</span>
               <span className="da-stat-card__value da-stat-card__value--success">
                 {stats.visitsForYear.mappingVisits}
               </span>
-            </div>
+            </Link>
           </div>
 
           <section className="da-section">
@@ -92,10 +93,10 @@ export default function Dashboard() {
                 <div className="da-empty">No visits recorded for {stats.selectedYear} yet.</div>
               ) : (
                 Object.entries(stats.visitsForYear.byType).map(([type, count]) => (
-                  <div key={type} className="da-type-bar">
+                  <Link key={type} className="da-type-bar" to={`/visits?from=${year}-01-01&to=${year}-12-31&type=${type}`}>
                     <span className="da-type-bar__label">{formatLabel(type)}</span>
                     <span className="da-type-bar__value">{count}</span>
-                  </div>
+                  </Link>
                 ))
               )}
             </div>

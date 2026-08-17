@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { supabase } from '../../auth/supabaseClient';
 
 function firstRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -14,7 +15,7 @@ export function usePractitioners() {
       const { data, error } = await supabase
         .from('practitioners')
         .select(`
-          id, name, contact_number1, contact_number2, has_whatsapp, status,
+          id, name, contact_number1, contact_number2, has_whatsapp, status, mapping_comments,
           ecdc:ecdc_id (id, name, area, chief, headman, number_children, attendance_updated, created_at),
           group:group_id (id, group_name),
           dsd_funded, dsd_registered,
@@ -85,4 +86,27 @@ export function usePractitionerVisits(practitionerId: string | null) {
     enabled: !!practitionerId, 
     staleTime: 1000 * 60 * 5,
   });
+}
+
+export function usePractitionerLifecycle(practitionerId: string) {
+  return useQuery({ queryKey: ['practitioner-lifecycle', practitionerId], queryFn: async () => {
+    const { data, error } = await supabase.from('practitioner_lifecycle_events').select('id, status, reason, comment, effective_on, changed_at').eq('practitioner_id', practitionerId).order('effective_on', { ascending: false });
+    if (error) throw new Error(error.message); return data ?? [];
+  }});
+}
+
+export function useSetPractitionerLifecycle() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: async (values: { id: string; status: string; reason: string; comment: string; effectiveOn: string }) => {
+    const { data, error } = await supabase.rpc('set_practitioner_lifecycle', { p_practitioner_id: values.id, p_status: values.status, p_reason: values.reason, p_comment: values.comment || null, p_effective_on: values.effectiveOn });
+    if (error) throw new Error(error.message); if (data && typeof data === 'object' && !Array.isArray(data) && 'success' in data && !data.success) throw new Error(String(data.code ?? 'Lifecycle update failed'));
+  }, onSuccess: async (_, values) => { await Promise.all([client.invalidateQueries({ queryKey: ['practitioners'] }), client.invalidateQueries({ queryKey: ['practitioner-lifecycle', values.id] })]); toast.success('Practitioner status updated'); }, onError: (error) => toast.error(error.message) });
+}
+
+export function useSetMappingComments() {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: async (values: { id: string; comments: string; reason: string }) => {
+    const { data, error } = await supabase.rpc('set_practitioner_mapping_comments', { p_practitioner_id: values.id, p_comments: values.comments, p_reason: values.reason });
+    if (error) throw new Error(error.message); if (data && typeof data === 'object' && !Array.isArray(data) && 'success' in data && !data.success) throw new Error(String(data.code ?? 'Mapping comment update failed'));
+  }, onSuccess: async () => { await client.invalidateQueries({ queryKey: ['practitioners'] }); toast.success('Mapping comments saved'); }, onError: (error) => toast.error(error.message) });
 }

@@ -1,238 +1,32 @@
 import { useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { formatDate, formatLabel } from '../../lib/format';
-import { useAuth } from '../auth/useAuth';
-import {
-  PlanningRow,
-  useCreatePlannedVisit,
-  usePlannedVisits,
-  usePlanningPractitioners,
-  usePlanningStaff,
-} from './api/usePlannedVisits';
-import '../../styles/shared.css';
+import { safeCsvCell } from './reporting';
+import { estimateRoute } from './routeEstimate';
+import { useCreatePlannedVisit, useManagePlannedVisit, usePlannedVisits, usePlanningPractitioners, usePlanningStaff } from './api/usePlannedVisits';
+import type { PlanningRow } from './api/usePlannedVisits';
 import '../../styles/outreachPlanning.css';
 
-const OUTREACH_TYPES = [
-  'outreach',
-  'training',
-  'literacy_promotion',
-  'monitoring',
-  'support_visit',
-  'other',
-];
+const TYPES = ['caregiver_training','literacy_promotion','practitioner_support','other'];
+function exportPlans(rows: PlanningRow[]) { const header=['Date','Practitioner','ECDC','Area','Contact 1','Contact 2','Staff','Type','Status','Notes']; const values=rows.map((row)=>[row.scheduled_date,row.practitioner?.name||row.practitioner_name,row.practitioner?.ecdc?.name,row.practitioner?.ecdc?.area,row.practitioner?.contact_number1,row.practitioner?.contact_number2,row.assigned_to?.name,row.outreach_type,row.status,row.notes]); const blob=new Blob([[header,...values].map((row)=>row.map(safeCsvCell).join(',')).join('\n')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const link=document.createElement('a');link.href=url;link.download=`outreach-planning-${new Date().toISOString().slice(0,10)}.csv`;link.click();URL.revokeObjectURL(url); }
 
-function exportPlannedVisits(rows: PlanningRow[]) {
-  const headers = [
-    'Scheduled Date',
-    'Practitioner',
-    'ECDC',
-    'Area',
-    'Contact 1',
-    'Contact 2',
-    'Assigned Staff',
-    'Outreach Type',
-    'Status',
-  ];
-
-  const csvRows = rows.map((row) => [
-    formatDate(row.scheduled_date),
-    row.practitioner?.name || row.practitioner_name || '',
-    row.practitioner?.ecdc?.name || '',
-    row.practitioner?.ecdc?.area || '',
-    row.practitioner?.contact_number1 || '',
-    row.practitioner?.contact_number2 || '',
-    row.assigned_to?.name || '',
-    formatLabel(row.outreach_type),
-    formatLabel(row.status),
-  ]);
-
-  const csv = [headers, ...csvRows]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `outreach-planning-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-export default function OutreachPlanningPage() {
-  const { isAdmin, loading: authLoading } = useAuth();
-  const [searchParams] = useSearchParams();
-  const selectedEcdcIds = useMemo(
-    () => new Set((searchParams.get('ecdcs') || '').split(',').filter(Boolean)),
-    [searchParams],
-  );
-
-  const { data: plannedVisits = [], isLoading: plannedLoading } = usePlannedVisits();
-  const { data: practitioners = [], isLoading: practitionersLoading } = usePlanningPractitioners();
-  const { data: staff = [] } = usePlanningStaff();
-  const createPlannedVisit = useCreatePlannedVisit();
-
-  const filteredPractitioners = useMemo(() => {
-    if (selectedEcdcIds.size === 0) return practitioners;
-    return practitioners.filter((practitioner) => practitioner.ecdc?.id && selectedEcdcIds.has(practitioner.ecdc.id));
-  }, [practitioners, selectedEcdcIds]);
-
-  const [form, setForm] = useState({
-    practitionerId: '',
-    scheduledDate: '',
-    outreachType: 'outreach',
-    assignedTo: '',
-  });
-
-  if (!authLoading && !isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  const selectedPractitioner = filteredPractitioners.find((practitioner) => practitioner.id === form.practitionerId);
-  const visiblePlans = selectedEcdcIds.size === 0
-    ? plannedVisits
-    : plannedVisits.filter((row) => row.practitioner?.ecdc?.id && selectedEcdcIds.has(row.practitioner.ecdc.id));
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedPractitioner || !form.scheduledDate || !form.outreachType) return;
-
-    createPlannedVisit.mutate({
-      practitionerId: selectedPractitioner.id,
-      practitionerName: selectedPractitioner.name || 'Unnamed practitioner',
-      scheduledDate: form.scheduledDate,
-      outreachType: form.outreachType,
-      assignedTo: form.assignedTo || null,
-    }, {
-      onSuccess: () => setForm((current) => ({
-        ...current,
-        practitionerId: '',
-        scheduledDate: '',
-      })),
-    });
-  };
-
-  return (
-    <div className="page">
-      <main className="op-main">
-        <header className="op-header">
-          <div>
-            <h1 className="op-title">Outreach Planning</h1>
-            <p className="op-subtitle">
-              Create planned visits and export a staff-ready outreach list with contact details.
-            </p>
-          </div>
-          <button className="op-button" onClick={() => exportPlannedVisits(visiblePlans)} disabled={visiblePlans.length === 0}>
-            Export CSV
-          </button>
-        </header>
-
-        {selectedEcdcIds.size > 0 && (
-          <div className="op-notice">
-            Showing practitioners and planned visits for {selectedEcdcIds.size} selected ECDC{selectedEcdcIds.size === 1 ? '' : 's'}.
-          </div>
-        )}
-
-        <section className="op-section">
-          <h2 className="op-section__title">Create Planned Visit</h2>
-          <form className="op-form" onSubmit={submit}>
-            <label>
-              <span>Practitioner / ECDC</span>
-              <select
-                value={form.practitionerId}
-                onChange={(event) => setForm((current) => ({ ...current, practitionerId: event.target.value }))}
-                required
-              >
-                <option value="">Choose practitioner</option>
-                {filteredPractitioners.map((practitioner) => (
-                  <option key={practitioner.id} value={practitioner.id}>
-                    {practitioner.name || 'Unnamed practitioner'}{practitioner.ecdc?.name ? ` - ${practitioner.ecdc.name}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>Date</span>
-              <input
-                type="date"
-                value={form.scheduledDate}
-                onChange={(event) => setForm((current) => ({ ...current, scheduledDate: event.target.value }))}
-                required
-              />
-            </label>
-
-            <label>
-              <span>Staff Member</span>
-              <select
-                value={form.assignedTo}
-                onChange={(event) => setForm((current) => ({ ...current, assignedTo: event.target.value }))}
-              >
-                <option value="">Unassigned</option>
-                {staff.map((person) => (
-                  <option key={person.id} value={person.id}>{person.name || 'Unnamed staff member'}</option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>Outreach Type</span>
-              <select
-                value={form.outreachType}
-                onChange={(event) => setForm((current) => ({ ...current, outreachType: event.target.value }))}
-                required
-              >
-                {OUTREACH_TYPES.map((type) => (
-                  <option key={type} value={type}>{formatLabel(type)}</option>
-                ))}
-              </select>
-            </label>
-
-            <button className="op-button op-button--primary" type="submit" disabled={createPlannedVisit.isPending || practitionersLoading}>
-              {createPlannedVisit.isPending ? 'Creating...' : 'Create Plan'}
-            </button>
-          </form>
-        </section>
-
-        <section className="op-section">
-          <h2 className="op-section__title">Planned Visits</h2>
-          {plannedLoading ? (
-            <div className="op-empty">Loading planned visits...</div>
-          ) : visiblePlans.length === 0 ? (
-            <div className="op-empty">No planned visits found.</div>
-          ) : (
-            <div className="op-table-wrap">
-              <table className="op-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Practitioner</th>
-                    <th>ECDC</th>
-                    <th>Contact</th>
-                    <th>Staff</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visiblePlans.map((row) => (
-                    <tr key={row.id}>
-                      <td>{formatDate(row.scheduled_date)}</td>
-                      <td>{row.practitioner?.name || row.practitioner_name || '-'}</td>
-                      <td>{row.practitioner?.ecdc?.name || '-'}</td>
-                      <td>{row.practitioner?.contact_number1 || row.practitioner?.contact_number2 || '-'}</td>
-                      <td>{row.assigned_to?.name || 'Unassigned'}</td>
-                      <td>{formatLabel(row.outreach_type)}</td>
-                      <td>{formatLabel(row.status)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </main>
-    </div>
-  );
+export default function OutreachPlanning() {
+  const [params] = useSearchParams(); const ecdcIds=useMemo(()=>new Set((params.get('ecdcs')||'').split(',').filter(Boolean)),[params]);
+  const {data:plans=[],isLoading}=usePlannedVisits(); const {data:people=[]}=usePlanningPractitioners(); const {data:staff=[]}=usePlanningStaff(); const create=useCreatePlannedVisit(); const manage=useManagePlannedVisit();
+  const eligible=useMemo(()=>ecdcIds.size?people.filter((person)=>person.ecdc?.id&&ecdcIds.has(person.ecdc.id)):people,[people,ecdcIds]);
+  const [selectedIds,setSelectedIds]=useState<string[]>([]); const [query,setQuery]=useState(''); const [statusFilter,setStatusFilter]=useState('planned'); const [costPerKm,setCostPerKm]=useState(0);
+  const [form,setForm]=useState({date:'',type:'caregiver_training',assignedTo:'',notes:''});
+  const shownPeople=eligible.filter((person)=>!query||`${person.name} ${person.ecdc?.name}`.toLowerCase().includes(query.toLowerCase())); const selected=selectedIds.map((id)=>people.find((person)=>person.id===id)).filter((person):person is NonNullable<typeof person>=>Boolean(person));
+  const coordinates=selected.flatMap((person)=>person.ecdc?.latitude!=null&&person.ecdc.longitude!=null?[{latitude:person.ecdc.latitude,longitude:person.ecdc.longitude}]:[]); const estimate=estimateRoute(coordinates,costPerKm); const missingCoordinates=selected.length-coordinates.length;
+  const visiblePlans=plans.filter((plan)=>(!statusFilter||plan.status===statusFilter)&&(!ecdcIds.size||(plan.practitioner?.ecdc?.id&&ecdcIds.has(plan.practitioner.ecdc.id))));
+  const toggle=(id:string)=>setSelectedIds((current)=>current.includes(id)?current.filter((item)=>item!==id):[...current,id]);
+  const move=(index:number,direction:number)=>setSelectedIds((current)=>{const next=[...current];const target=index+direction;if(target<0||target>=next.length)return current;[next[index],next[target]]=[next[target],next[index]];return next;});
+  const submit=()=>{if(!selected.length||!form.date)return;create.mutate({practitioners:selected.map((person)=>({id:person.id,name:person.name||'Unnamed practitioner'})),scheduledDate:form.date,outreachType:form.type,assignedTo:form.assignedTo||null,notes:form.notes},{onSuccess:()=>setSelectedIds([])});};
+  const cancel=(id:string)=>{const reason=window.prompt('Cancellation reason (required)');if(reason?.trim())manage.mutate({id,status:'cancelled',reason});};
+  return <div className="page op-page"><main className="op-main"><header className="op-header"><div><h1 className="op-title">Outreach Planning</h1><p className="op-subtitle">Build a bulk visit list, assign staff, and estimate a day route before export.</p></div><button className="op-button" disabled={!visiblePlans.length} onClick={()=>exportPlans(visiblePlans)}>Export visible plans</button></header>
+    <section className="op-section"><h2 className="op-section__title">1. Select practitioners</h2><div className="op-picker-tools"><input placeholder="Search practitioner or ECDC" value={query} onChange={(event)=>setQuery(event.target.value)}/><button className="lyt-btn" onClick={()=>setSelectedIds(selectedIds.length===shownPeople.length?[]:shownPeople.map((person)=>person.id))}>{selectedIds.length===shownPeople.length?'Clear shown':'Select all shown'}</button></div><div className="op-picker">{shownPeople.map((person)=><label key={person.id}><input type="checkbox" checked={selectedIds.includes(person.id)} onChange={()=>toggle(person.id)}/><span><strong>{person.name||'Unnamed'}</strong><small>{person.ecdc?.name||'No ECDC'} · {person.ecdc?.area||'Area unknown'}</small></span></label>)}</div></section>
+    <section className="op-section"><h2 className="op-section__title">2. Schedule and assign</h2><div className="op-form"><label><span>Date</span><input type="date" value={form.date} onChange={(event)=>setForm({...form,date:event.target.value})}/></label><label><span>Type</span><select value={form.type} onChange={(event)=>setForm({...form,type:event.target.value})}>{TYPES.map((type)=><option key={type} value={type}>{formatLabel(type)}</option>)}</select></label><label><span>Staff</span><select value={form.assignedTo} onChange={(event)=>setForm({...form,assignedTo:event.target.value})}><option value="">Unassigned</option>{staff.map((person)=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label><span>Notes</span><input value={form.notes} onChange={(event)=>setForm({...form,notes:event.target.value})}/></label><button className="op-button op-button--primary" disabled={!selected.length||!form.date||create.isPending} onClick={submit}>Create {selected.length} plan{selected.length===1?'':'s'}</button></div></section>
+    <section className="op-section"><h2 className="op-section__title">3. Day route estimate</h2><p className="op-route-warning">Planning estimate only: straight-line distances between the ordered ECDCs, not road navigation.</p><div className="op-route-layout"><ol>{selected.map((person,index)=><li key={person.id}><span>{person.ecdc?.name||person.name}</span><button onClick={()=>move(index,-1)} aria-label={`Move ${person.name} up`}>↑</button><button onClick={()=>move(index,1)} aria-label={`Move ${person.name} down`}>↓</button></li>)}</ol><div className="op-route-total"><label>Cost per km (R)<input type="number" min="0" step="0.01" value={costPerKm} onChange={(event)=>setCostPerKm(Number(event.target.value))}/></label><strong>{estimate.distanceKm.toFixed(1)} km · R{estimate.cost.toFixed(2)}</strong>{missingCoordinates>0&&<span>{missingCoordinates} stop{missingCoordinates===1?' is':'s are'} excluded because coordinates are missing.</span>}</div></div></section>
+    <section className="op-section"><div className="op-list-title"><h2 className="op-section__title">Planned visits</h2><select value={statusFilter} onChange={(event)=>setStatusFilter(event.target.value)}><option value="">All statuses</option><option value="planned">Planned</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>{isLoading?<div className="op-empty">Loading…</div>:!visiblePlans.length?<div className="op-empty">No planned visits in this view.</div>:<div className="op-table-wrap"><table className="op-table"><thead><tr><th>Date</th><th>Practitioner / ECDC</th><th>Staff</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead><tbody>{visiblePlans.map((row)=><tr key={row.id}><td>{formatDate(row.scheduled_date)}</td><td>{row.practitioner?.name||row.practitioner_name}<small>{row.practitioner?.ecdc?.name}</small></td><td><select value={row.assigned_to?.id||''} onChange={(event)=>manage.mutate({id:row.id,assignedTo:event.target.value||null})}><option value="">Unassigned</option>{staff.map((person)=><option key={person.id} value={person.id}>{person.name}</option>)}</select></td><td>{formatLabel(row.outreach_type)}</td><td>{formatLabel(row.status)}</td><td>{row.status==='planned'&&<div className="op-row-actions"><button className="lyt-btn" onClick={()=>manage.mutate({id:row.id,status:'completed',reason:'Marked completed from planning'})}>Complete</button><button className="lyt-btn" onClick={()=>cancel(row.id)}>Cancel</button></div>}</td></tr>)}</tbody></table></div>}</section>
+  </main></div>;
 }

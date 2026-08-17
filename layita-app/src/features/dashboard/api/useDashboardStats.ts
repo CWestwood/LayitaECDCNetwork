@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../auth/supabaseClient';
+import { canonicalOutreachOutcome, canonicalOutreachType } from '../../visits/reporting';
 
 export interface DashboardStats {
   totalPractitioners: number;
@@ -48,7 +49,7 @@ export function useDashboardStats(year = new Date().getFullYear()) {
 
         supabase
           .from('outreach_visits')
-          .select('outreach_type, outreach_happened, data_capturer:layita_staff(name)')
+          .select('outreach_type, outreach_happened, did_instead, data_capturer:layita_staff(name)')
           .is('deleted_at', null)
           .gte('date', startOfYear)
           .lt('date', startOfNextYear),
@@ -78,7 +79,8 @@ export function useDashboardStats(year = new Date().getFullYear()) {
       let mappingVisits = 0;
 
       visits.forEach(v => {
-        const type = v.outreach_type || 'Unknown';
+        const type = canonicalOutreachType(v.outreach_type);
+        if (!type) return;
         const staffName = v.data_capturer?.name || 'Unknown Staff';
         byType[type] = (byType[type] || 0) + 1;
 
@@ -88,13 +90,10 @@ export function useDashboardStats(year = new Date().getFullYear()) {
         byStaff[staffName].total += 1;
         byStaff[staffName].byType[type] = (byStaff[staffName].byType[type] || 0) + 1;
 
-        if (v.outreach_happened !== 'Yes') {
+        if (canonicalOutreachOutcome(v.outreach_happened, v.did_instead) === 'did_not_happen') {
           didNotHappen++;
         }
         
-        if (type.toLowerCase().includes('map')) {
-          mappingVisits++;
-        }
       });
 
       // If 'map' isn't explicitly the type, fallback to checking ecdcs created this year
@@ -114,7 +113,7 @@ export function useDashboardStats(year = new Date().getFullYear()) {
         totalEcdcs: ecdcsRes.count || 0,
         selectedYear: year,
         visitsForYear: {
-          total: visits.length,
+          total: Object.values(byType).reduce((sum, count) => sum + count, 0),
           byType,
           didNotHappen,
           mappingVisits,

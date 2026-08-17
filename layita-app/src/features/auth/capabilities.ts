@@ -5,6 +5,7 @@ export type Capability =
   | 'view_quality'
   | 'reprocess_kobo'
   | 'manage_plans'
+  | 'manage_training'
   | 'restore_records'
   | 'manage_users';
 
@@ -13,10 +14,11 @@ const ROLE_CAPABILITIES: Record<AppRole, ReadonlySet<Capability>> = {
     'view_quality',
     'reprocess_kobo',
     'manage_plans',
+    'manage_training',
     'restore_records',
     'manage_users',
   ]),
-  manager: new Set(['manage_own_work', 'view_quality']),
+  manager: new Set(['manage_own_work', 'view_quality', 'manage_training']),
   datacapturer: new Set(['manage_own_work']),
   library: new Set(),
 };
