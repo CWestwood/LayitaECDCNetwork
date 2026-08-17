@@ -25,6 +25,10 @@ AS $$
     WHEN 'support' THEN 'practitioner_support'
     WHEN 'support_visit' THEN 'practitioner_support'
     WHEN 'practitioner_support' THEN 'practitioner_support'
+    WHEN 'mapping' THEN 'ecdc_mapping'
+    WHEN 'ecdc_mapping' THEN 'ecdc_mapping'
+    WHEN 'baseline' THEN 'ecdc_mapping'
+    WHEN 'full_audit' THEN 'ecdc_mapping'
     WHEN 'other' THEN 'other'
     ELSE NULL
   END

@@ -18,6 +18,7 @@ BEGIN
   ) expected(signature) WHERE to_regprocedure('public.' || signature) IS NULL)
   THEN RAISE EXCEPTION 'One or more Phase 4 RPC signatures are missing'; END IF;
   IF public.canonical_outreach_type('training') <> 'caregiver_training'
+     OR public.canonical_outreach_type('ECDC Mapping') <> 'ecdc_mapping'
      OR public.canonical_outreach_type('Update ECDC Details') IS NOT NULL
      OR public.canonical_outreach_outcome('no', 'not applicable') <> 'did_not_happen'
      OR public.canonical_outreach_outcome('No, but I did something else', 'literacy_promotion') <> 'different_to_planned'
@@ -41,6 +42,12 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_actor::text, true);
   INSERT INTO public.practitioners(id, name, status) VALUES (v_p1, 'Phase 4 primary', 'active'), (v_p2, 'Phase 4 additional', 'active');
   INSERT INTO public.outreach_visits(id, date, practitioner_id, outreach_type, outreach_happened, source) VALUES (v_visit, current_date, v_p1, 'training', 'Yes', 'manual');
+  IF NOT EXISTS (SELECT 1 FROM public.outreach_reporting WHERE id=v_visit AND outreach_type_code='caregiver_training')
+  THEN RAISE EXCEPTION 'Standard outreach reporting classification failed'; END IF;
+  UPDATE public.outreach_visits SET outreach_type='ECDC Mapping' WHERE id=v_visit;
+  IF NOT EXISTS (SELECT 1 FROM public.outreach_reporting WHERE id=v_visit AND outreach_type_code='ecdc_mapping')
+  THEN RAISE EXCEPTION 'Mapping visit was excluded from outreach reporting'; END IF;
+  UPDATE public.outreach_visits SET outreach_type='training' WHERE id=v_visit;
   INSERT INTO public.outreach_visits(id, date, practitioner_id, outreach_type, outreach_happened, did_instead, source)
   VALUES (v_alternative, current_date, v_p1, 'training', 'No, but I did something else', 'literacy_promotion', 'kobo');
   IF NOT EXISTS (SELECT 1 FROM public.outreach_reporting WHERE id=v_alternative AND outreach_type_code='literacy_promotion' AND planned_outreach_type_code='caregiver_training' AND outcome_code='different_to_planned')

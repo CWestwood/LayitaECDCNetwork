@@ -1,6 +1,6 @@
 import type { VisitRow } from './api/useVisits';
 
-export const OUTREACH_TYPES = ['caregiver_training', 'literacy_promotion', 'practitioner_support', 'other'] as const;
+export const OUTREACH_TYPES = ['caregiver_training', 'literacy_promotion', 'practitioner_support', 'ecdc_mapping', 'other'] as const;
 export const OUTREACH_OUTCOMES = ['happened', 'different_to_planned', 'did_not_happen'] as const;
 const OUTCOME_LABELS: Record<(typeof OUTREACH_OUTCOMES)[number], string> = {
   happened: 'Happened',
@@ -14,6 +14,7 @@ export function canonicalOutreachType(value: string | null | undefined): string 
   if (['outreach', 'training', 'caregiver_training', 'caregivertraining'].includes(normalized)) return 'caregiver_training';
   if (['literacy', 'literacy_promotion'].includes(normalized)) return 'literacy_promotion';
   if (['support', 'support_visit', 'practitioner_support'].includes(normalized)) return 'practitioner_support';
+  if (['mapping', 'ecdc_mapping', 'baseline', 'full_audit'].includes(normalized)) return 'ecdc_mapping';
   return normalized === 'other' ? 'other' : null;
 }
 export function canonicalOutreachOutcome(happened: string | null | undefined, didInstead: string | null | undefined) {
