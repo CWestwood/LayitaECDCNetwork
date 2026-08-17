@@ -18,15 +18,15 @@ export interface UnmatchedRecord {
   created_at: string;
 }
 
-export interface ReconciliationRecord {
-  instance_id: string;
-  submitted_at: string;
-  processing_status: string | null;
-  reconciliation_state: string;
-  unresolved_count: number;
-  attempt_count: number | null;
-  error_message: string | null;
-  action_required: boolean;
+export interface DuplicateVisitSummary {
+  id: string;
+  date: string | null;
+  practitionerNames: string[];
+  ecdcName: string | null;
+  dataCapturerName: string | null;
+  parentsAttending: number | string | null;
+  parentsEnrolled: number | string | null;
+  childrenInvolved: number | string | null;
 }
 
 export interface DuplicateVisitCandidate {
@@ -36,6 +36,8 @@ export interface DuplicateVisitCandidate {
   confidence_score: number;
   instance_a: string | null;
   instance_b: string | null;
+  visitA: DuplicateVisitSummary;
+  visitB: DuplicateVisitSummary;
 }
 
 export interface PractitionerOption {
@@ -113,33 +115,6 @@ export function useUnmatchedRecords() {
   });
 }
 
-export function useKoboReconciliation() {
-  return useQuery<ReconciliationRecord[]>({
-    queryKey: ['kobo-reconciliation'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('kobo_reconciliation')
-        .select('instance_id, submitted_at, processing_status, reconciliation_state, unresolved_count, attempt_count, error_message, action_required')
-        .eq('action_required', true)
-        .order('submitted_at', { ascending: false })
-        .limit(250);
-      if (error) throw new Error(error.message);
-      return (data ?? []).flatMap((record): ReconciliationRecord[] => {
-        if (!record.instance_id || !record.submitted_at) return [];
-        return [{
-          ...record,
-          instance_id: record.instance_id,
-          submitted_at: record.submitted_at,
-          reconciliation_state: record.reconciliation_state ?? 'unknown',
-          unresolved_count: record.unresolved_count ?? 0,
-          action_required: record.action_required ?? false,
-        }];
-      });
-    },
-    staleTime: 1000 * 60 * 2,
-  });
-}
-
 export function useDuplicateVisitCandidates() {
   return useQuery<DuplicateVisitCandidate[]>({
     queryKey: ['outreach-duplicate-candidates'],
@@ -151,7 +126,8 @@ export function useDuplicateVisitCandidates() {
         .order('confidence_score', { ascending: false })
         .limit(100);
       if (error) throw new Error(error.message);
-      return (data ?? []).flatMap((candidate): DuplicateVisitCandidate[] => {
+
+      const candidates = (data ?? []).flatMap((candidate) => {
         if (!candidate.visit_a_id || !candidate.visit_b_id || !candidate.date) return [];
         return [{
           ...candidate,
@@ -160,6 +136,46 @@ export function useDuplicateVisitCandidates() {
           date: candidate.date,
           confidence_score: candidate.confidence_score ?? 0,
         }];
+      });
+
+      if (candidates.length === 0) return [];
+
+      const visitIds = [...new Set(candidates.flatMap((candidate) => [candidate.visit_a_id, candidate.visit_b_id]))];
+      const { data: visits, error: visitsError } = await supabase
+        .from('outreach_visits')
+        .select(`
+          id, date, parents_enrolled, parents_attending, parents_trained,
+          children_receiving_books, children_books,
+          practitioner:practitioners!outreach_visits_practitioner_id_fkey(name, ecdc:ecdc_id(name)),
+          data_capturer:layita_staff(name),
+          participants:outreach_visit_practitioners(practitioner:practitioners(name))
+        `)
+        .in('id', visitIds);
+
+      if (visitsError) throw new Error(visitsError.message);
+
+      const summaries = new Map<string, DuplicateVisitSummary>();
+      for (const visit of visits ?? []) {
+        const participantNames = (visit.participants ?? [])
+          .map((participant) => participant.practitioner?.name)
+          .filter((name): name is string => Boolean(name));
+        const primaryName = visit.practitioner?.name;
+        summaries.set(visit.id, {
+          id: visit.id,
+          date: visit.date,
+          practitionerNames: participantNames.length ? participantNames : primaryName ? [primaryName] : [],
+          ecdcName: visit.practitioner?.ecdc?.name ?? null,
+          dataCapturerName: visit.data_capturer?.name ?? null,
+          parentsAttending: visit.parents_attending ?? visit.parents_trained,
+          parentsEnrolled: visit.parents_enrolled,
+          childrenInvolved: visit.children_receiving_books ?? visit.children_books,
+        });
+      }
+
+      return candidates.flatMap((candidate): DuplicateVisitCandidate[] => {
+        const visitA = summaries.get(candidate.visit_a_id);
+        const visitB = summaries.get(candidate.visit_b_id);
+        return visitA && visitB ? [{ ...candidate, visitA, visitB }] : [];
       });
     },
     staleTime: 1000 * 60 * 2,
