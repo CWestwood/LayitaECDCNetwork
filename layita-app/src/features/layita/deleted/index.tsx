@@ -1,12 +1,17 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { formatDate } from '../../../lib/format';
 import {
   useDeletedPractitioners,
   useDeletedEcdcs,
   useDeletedVisits,
+  useRestorePractitioner,
+  useRestoreEcdc,
+  useRestoreVisit,
 } from './api/useDeletedRecords';
 import { useHardDeletePractitioner } from '../../practitioners/api/useDeletePractitioner';
 import { useHardDeleteEcdc } from '../../ecdcs/api/useDeleteEcdc';
 import { useHardDeleteVisit } from '../../visits/api/useDeleteVisit';
+import '../../../styles/shared.css';
 import '../../../styles/deleted-records.css';
 
 type Tab = 'practitioners' | 'ecdcs' | 'visits';
@@ -15,42 +20,45 @@ export default function DeletedRecords() {
   const [activeTab, setActiveTab] = useState<Tab>('practitioners');
 
   return (
-    <div className="la-deleted">
-      <header className="la-deleted__header">
-        <h1 className="la-deleted__title">Deleted Records (Recycle Bin)</h1>
-        <p className="la-deleted__subtitle">
-          Records soft-deleted by users. Only administrators can permanently delete them here.
-        </p>
-      </header>
+    <div className="page">
+      <div className="la-deleted">
+        <header className="la-deleted__header">
+          <h1 className="la-deleted__title">Deleted Records (Recycle Bin)</h1>
+          <p className="la-deleted__subtitle">
+            Records soft-deleted by users. Only administrators can permanently delete them here.
+          </p>
+        </header>
 
-      <div className="la-deleted__tabs">
-        {(['practitioners', 'ecdcs', 'visits'] as Tab[]).map((tab) => (
-          <button
-            key={tab}
-            className={`la-deleted__tab${activeTab === tab ? ' la-deleted__tab--active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
+        <div className="la-deleted__tabs">
+          {(['practitioners', 'ecdcs', 'visits'] as Tab[]).map((tab) => (
+            <button
+              key={tab}
+              className={`la-deleted__tab${activeTab === tab ? ' la-deleted__tab--active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
 
-      <div className="la-deleted__body">
-        {activeTab === 'practitioners' && <DeletedPractitionersList />}
-        {activeTab === 'ecdcs' && <DeletedEcdcsList />}
-        {activeTab === 'visits' && <DeletedVisitsList />}
+        <div className="la-deleted__body">
+          {activeTab === 'practitioners' && <DeletedPractitionersList />}
+          {activeTab === 'ecdcs' && <DeletedEcdcsList />}
+          {activeTab === 'visits' && <DeletedVisitsList />}
+        </div>
       </div>
     </div>
   );
 }
 
-// Shared confirmation row
 interface ConfirmActionsProps {
   id: string;
   confirmingId: string | null;
   setConfirmingId: (id: string | null) => void;
   onHardDelete: (id: string) => void;
+  onRestore: (id: string) => void;
   isPending: boolean;
+  isRestorePending: boolean;
 }
 
 function ConfirmActions({
@@ -58,7 +66,9 @@ function ConfirmActions({
   confirmingId,
   setConfirmingId,
   onHardDelete,
+  onRestore,
   isPending,
+  isRestorePending,
 }: ConfirmActionsProps) {
   if (confirmingId === id) {
     return (
@@ -84,6 +94,13 @@ function ConfirmActions({
   return (
     <div className="la-deleted__actions">
       <button
+        className="la-deleted__btn la-deleted__btn--restore"
+        disabled={isRestorePending}
+        onClick={() => onRestore(id)}
+      >
+        {isRestorePending ? 'Restoring...' : 'Restore'}
+      </button>
+      <button
         className="la-deleted__btn la-deleted__btn--danger"
         onClick={() => setConfirmingId(id)}
       >
@@ -93,10 +110,10 @@ function ConfirmActions({
   );
 }
 
-// List Components
 function DeletedPractitionersList() {
   const { data = [], isLoading } = useDeletedPractitioners();
   const { mutate: hardDelete, isPending: hardPending } = useHardDeletePractitioner();
+  const { mutate: restore, isPending: restorePending } = useRestorePractitioner();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   if (isLoading) return <div className="la-deleted__loading">Loading...</div>;
@@ -114,15 +131,17 @@ function DeletedPractitionersList() {
       <tbody>
         {data.map((p) => (
           <tr key={p.id} className="la-deleted__row">
-            <td>{p.name ?? '—'}</td>
-            <td>{p.deleted_at ? new Date(p.deleted_at).toLocaleDateString() : '—'}</td>
+            <td>{p.name ?? '-'}</td>
+            <td>{formatDate(p.deleted_at)}</td>
             <td>
               <ConfirmActions
                 id={p.id}
                 confirmingId={confirmingId}
                 setConfirmingId={setConfirmingId}
                 onHardDelete={hardDelete}
+                onRestore={restore}
                 isPending={hardPending}
+                isRestorePending={restorePending}
               />
             </td>
           </tr>
@@ -135,6 +154,7 @@ function DeletedPractitionersList() {
 function DeletedEcdcsList() {
   const { data = [], isLoading } = useDeletedEcdcs();
   const { mutate: hardDelete, isPending: hardPending } = useHardDeleteEcdc();
+  const { mutate: restore, isPending: restorePending } = useRestoreEcdc();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   if (isLoading) return <div className="la-deleted__loading">Loading...</div>;
@@ -153,16 +173,18 @@ function DeletedEcdcsList() {
       <tbody>
         {data.map((e) => (
           <tr key={e.id} className="la-deleted__row">
-            <td>{e.name ?? '—'}</td>
-            <td>{e.area ?? '—'}</td>
-            <td>{e.deleted_at ? new Date(e.deleted_at).toLocaleDateString() : '—'}</td>
+            <td>{e.name ?? '-'}</td>
+            <td>{e.area ?? '-'}</td>
+            <td>{formatDate(e.deleted_at)}</td>
             <td>
               <ConfirmActions
                 id={e.id}
                 confirmingId={confirmingId}
                 setConfirmingId={setConfirmingId}
                 onHardDelete={hardDelete}
+                onRestore={restore}
                 isPending={hardPending}
+                isRestorePending={restorePending}
               />
             </td>
           </tr>
@@ -175,6 +197,7 @@ function DeletedEcdcsList() {
 function DeletedVisitsList() {
   const { data = [], isLoading } = useDeletedVisits();
   const { mutate: hardDelete, isPending: hardPending } = useHardDeleteVisit();
+  const { mutate: restore, isPending: restorePending } = useRestoreVisit();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   if (isLoading) return <div className="la-deleted__loading">Loading...</div>;
@@ -193,16 +216,18 @@ function DeletedVisitsList() {
       <tbody>
         {data.map((v) => (
           <tr key={v.id} className="la-deleted__row">
-            <td>{v.date ?? '—'}</td>
-            <td>{v.outreach_type ?? '—'}</td>
-            <td>{v.deleted_at ? new Date(v.deleted_at).toLocaleDateString() : '—'}</td>
+            <td>{formatDate(v.date)}</td>
+            <td>{v.outreach_type ?? '-'}</td>
+            <td>{formatDate(v.deleted_at)}</td>
             <td>
               <ConfirmActions
                 id={v.id}
                 confirmingId={confirmingId}
                 setConfirmingId={setConfirmingId}
                 onHardDelete={hardDelete}
+                onRestore={restore}
                 isPending={hardPending}
+                isRestorePending={restorePending}
               />
             </td>
           </tr>

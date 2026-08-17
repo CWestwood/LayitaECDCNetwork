@@ -5,7 +5,6 @@ import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
 import { Practitioner } from "./types";
 import {
   daysSince,
-  urgency,
   trainingCount,
   VisitBadge,
 } from "./_components";
@@ -16,6 +15,7 @@ interface Props {
   lastVisit: string | undefined;
   onClick: () => void;
   isMultiSelected?: boolean;
+  onMultiSelectToggle?: React.ChangeEventHandler<HTMLInputElement>;
 }
 
 export default function PractitionerCard({ p, selected, lastVisit, onClick, isMultiSelected, onMultiSelectToggle }: Props) {

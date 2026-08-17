@@ -1,46 +1,36 @@
-import { useState, useEffect } from "react";
-import { supabase } from "../features/auth/supabaseClient";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
+import { toast } from "sonner";
 import { NAV_ITEMS } from "../routes/Navitems";
 import logo from "../assets/layitalogosvg.svg";
 import { useAuth }  from "../features/auth/useAuth";
 
-interface UserProfile {
-  name: string;
-  role: string;
+interface SidebarProps {
+  footer?: ReactNode;
+  defaultCollapsed?: boolean;
 }
 
-export default function Sidebar({ footer = null, defaultCollapsed = false }) {
+export default function Sidebar({ footer = null, defaultCollapsed = false }: SidebarProps) {
+  const { isAdmin, loading, can, profile, role, session, signOut } = useAuth();
+  const visibleItems = loading
+    ? []
+    : NAV_ITEMS.filter(item =>
+        !item.hiddenFromNav &&
+        (!item.capability || can(item.capability)) &&
+        !(isAdmin && item.hideForAdmin)
+      );
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const { isAdmin, loading } = useAuth()
-  const visibleItems = loading ? [] : NAV_ITEMS.filter(item => item.role === "all" || (item.role === "admin" && isAdmin));
-
-  useEffect(() => {
-    async function getProfile() {
-      // 1. Get the current authenticated user's ID
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (user) {
-        // 2. Fetch the name and role from the 'profiles' table
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('name, role')
-          .eq('id', user.id)
-          .single(); // We only expect one row
-
-        if (!error && data) {
-          setProfile(data);
-        }
-      }
-    }
-    getProfile();
-  }, []); 
-
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('layita-sidebar-collapsed') === 'true' || defaultCollapsed);
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => { localStorage.setItem('layita-sidebar-collapsed', String(collapsed)); }, [collapsed]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await signOut();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Sign out failed');
+    }
   };
 
   return (
@@ -50,9 +40,11 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
           <img src={logo} alt="Layita Logo" className="sidebar__logo" />
         </div>
         <button
+          type="button"
           className="sidebar__collapse-btn"
           onClick={() => setCollapsed((v) => !v)}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
         >
           <svg
             width="12"
@@ -76,8 +68,8 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
           {/* Note: If you want to add the "nav-section-label" (e.g., "Overview", "Programme") 
               like in the HTML, you will need to update your NAV_ITEMS array to include section 
               headers and map through them here. */}
-          {visibleItems.map(({ to, label, icon }) => (
-            <li key={to}>
+          {visibleItems.map(({ to, label, icon, mobilePrimary }) => (
+            <li key={to} data-mobile-primary={mobilePrimary !== false ? "true" : "false"}>
               <NavLink
                 to={to}
                 className={({ isActive }) => (isActive ? "active" : "")}
@@ -88,6 +80,7 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
               </NavLink>
             </li>
           ))}
+          {visibleItems.some((item) => !item.mobilePrimary) && <li className="sidebar__more-mobile"><button type="button" onClick={() => setMoreOpen((open) => !open)} aria-expanded={moreOpen} aria-label="More navigation"><span className="sidebar__nav-icon">•••</span><span className="sidebar__nav-label">More</span></button></li>}
 
           {/* Mobile-only logout button (hidden on desktop via CSS) */}
           <li className="sidebar__nav-logout-mobile">
@@ -111,6 +104,7 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
           </li>
         </ul>
       </nav>
+      {moreOpen && <div className="sidebar__mobile-menu" role="dialog" aria-label="More navigation"><div className="sidebar__mobile-menu-head"><strong>More</strong><button onClick={() => setMoreOpen(false)} aria-label="Close more navigation">×</button></div>{visibleItems.filter((item) => !item.mobilePrimary).map((item) => <NavLink key={item.to} to={item.to} onClick={() => setMoreOpen(false)}>{item.icon}<span>{item.label}</span></NavLink>)}</div>}
 
       <div className="sidebar__footer">
         {footer && (
@@ -121,10 +115,11 @@ export default function Sidebar({ footer = null, defaultCollapsed = false }) {
         
         <div className="sidebar__user" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <div className="sidebar__user-info" style={{ overflow: 'hidden' }}>
-            <div className="sidebar__user-name">{profile?.name || "Admin User"}</div>
-            <div className="sidebar__user-role" style={{ textTransform: 'capitalize' }}>{profile?.role || "Administrator"}</div>
+            <div className="sidebar__user-name">{profile?.name || session?.user.email || "Signed in"}</div>
+            <div className="sidebar__user-role" style={{ textTransform: 'capitalize' }}>{role || "User"}</div>
           </div>
           <button 
+            type="button"
             onClick={handleLogout} 
             title="Log out"
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted, #6B7280)', padding: '6px', display: 'flex', alignItems: 'center', transition: 'color 0.2s', flexShrink: 0 }}

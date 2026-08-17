@@ -1,0 +1,939 @@
+{
+  "form_name": "ECDC Outreach Form (kobo xlsform)",
+  "source_file": "aYUG78pqvXan6bMfk9TquB_1_.xlsx",
+  "fields": [
+    {
+      "name": "start",
+      "path": "start",
+      "group": null,
+      "type": "start",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "end",
+      "path": "end",
+      "group": null,
+      "type": "end",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "outreach_date",
+      "path": "outreach_date",
+      "group": null,
+      "type": "date",
+      "label": "What date did the outreach take place?",
+      "hint": null,
+      "required": true,
+      "relevant": null,
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "data_capturer",
+      "path": "data_capturer",
+      "group": null,
+      "type": "select_one layitastaff",
+      "label": "Name of person collecting data",
+      "hint": null,
+      "required": true,
+      "relevant": null,
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "layitastaff",
+      "choices": [
+        {
+          "name": "nokuphumla",
+          "label": "Nokuphumla"
+        },
+        {
+          "name": "sive",
+          "label": "Sive"
+        },
+        {
+          "name": "pumza",
+          "label": "Pumza"
+        },
+        {
+          "name": "other",
+          "label": "Other"
+        }
+      ]
+    },
+    {
+      "name": "outreach_type",
+      "path": "outreach_type",
+      "group": null,
+      "type": "select_one outreach_type",
+      "label": "What did you do?",
+      "hint": null,
+      "required": true,
+      "relevant": null,
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "outreach_type",
+      "choices": [
+        {
+          "name": "mapping",
+          "label": "ECDC Mapping"
+        },
+        {
+          "name": "update",
+          "label": "Update ECDC Details"
+        },
+        {
+          "name": "caregiver",
+          "label": "Caregiver Training"
+        },
+        {
+          "name": "interested",
+          "label": "Add Practitioner Interested in joining network"
+        }
+      ]
+    },
+    {
+      "name": "happened",
+      "path": "happened",
+      "group": null,
+      "type": "select_one yesno_other",
+      "label": "Did the outreach happen as planned?",
+      "hint": null,
+      "required": true,
+      "relevant": "${outreach_type} != 'update' and ${outreach_type} != 'interested'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "yesno_other",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        },
+        {
+          "name": "else",
+          "label": "No, but I did something else"
+        }
+      ]
+    },
+    {
+      "name": "What_did_you_do_instead",
+      "path": "What_did_you_do_instead",
+      "group": null,
+      "type": "select_one vk2fa82",
+      "label": "What did you do instead?",
+      "hint": null,
+      "required": true,
+      "relevant": "${happened} = 'else'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "vk2fa82",
+      "choices": [
+        {
+          "name": "literacy_promotion",
+          "label": "Literacy Promotion"
+        },
+        {
+          "name": "support",
+          "label": "Practitioner Support"
+        }
+      ]
+    },
+    {
+      "name": "transport_type",
+      "path": "transport_type",
+      "group": null,
+      "type": "select_one transport",
+      "label": "What transport did you use?",
+      "hint": null,
+      "required": true,
+      "relevant": "${happened} = 'yes' or ${happened} = 'else' and ${outreach_type} != 'update' and ${outreach_type}='interested'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "transport",
+      "choices": [
+        {
+          "name": "walked",
+          "label": "Walked"
+        },
+        {
+          "name": "public",
+          "label": "Public Transport"
+        },
+        {
+          "name": "private",
+          "label": "Private Transport"
+        }
+      ]
+    },
+    {
+      "name": "transport_cost",
+      "path": "transport_cost",
+      "group": null,
+      "type": "integer",
+      "label": "How much did it cost?",
+      "hint": "Please note that this is the cost of the RETURN trip (so there and back)",
+      "required": true,
+      "relevant": "${transport_type} = 'public' or ${transport_type} = 'private'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "km_logged",
+      "path": "km_logged",
+      "group": null,
+      "type": "integer",
+      "label": "How many kilometres were logged?",
+      "hint": "Please note that this is the km for the RETURN trip (so there and back)",
+      "required": true,
+      "relevant": "${transport_type} = 'private'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "Is_this_site_accessi_by_public_transport",
+      "path": "Is_this_site_accessi_by_public_transport",
+      "group": null,
+      "type": "select_one xi8xu31",
+      "label": "Is this site accessible by public transport?",
+      "hint": "Please add any other transport related challenges to the comments section",
+      "required": true,
+      "relevant": "${happened} != 'no' and ${outreach_type} != 'update' and ${outreach_type} != 'interested'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "xi8xu31",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "name": "prac_visit",
+      "path": "prac_visit",
+      "group": null,
+      "type": "select_one yesno",
+      "label": "Did you visit a Practitioner?",
+      "hint": null,
+      "required": true,
+      "relevant": "${outreach_type} != 'mapping' and ${happened} != 'no' and ${outreach_type} != 'update' and ${outreach_type} != 'interested'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "yesno",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "name": "ecdc_practitioner",
+      "path": "ecdc_practitioner",
+      "group": null,
+      "type": "select_one_from_file practitioner_list.csv",
+      "label": "Which Practitioner did you visit?",
+      "hint": null,
+      "required": true,
+      "relevant": "(${happened} = 'yes' or ${happened} = 'else' or ${outreach_type} ='update') and ${outreach_type} != 'mapping' and ${prac_visit} != 'no'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": "list_name = \"practitioners\"",
+      "select_type": "select_one_from_file",
+      "external_file": "practitioner_list.csv",
+      "choices": "dynamic (loaded from external CSV attached to the form, not in this xlsx)"
+    },
+    {
+      "name": "practitioner_new",
+      "path": "practitioner_new",
+      "group": null,
+      "type": "text",
+      "label": "What is the name of the practitioner",
+      "hint": null,
+      "required": true,
+      "relevant": "${ecdc_practitioner} = 'none' or ${outreach_type} = 'mapping' or ${outreach_type} = 'interested'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "group",
+      "path": "group",
+      "group": null,
+      "type": "select_one group",
+      "label": "Which group does this ECDC fall under?",
+      "hint": null,
+      "required": true,
+      "relevant": "${ecdc_practitioner} =  'none' or ${details_needed} = 'group' or ${outreach_type} = 'mapping'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "group",
+      "choices": [
+        {
+          "name": "ss_1",
+          "label": "SS Group 1 (2023)"
+        },
+        {
+          "name": "ss_2",
+          "label": "SS Group 2 (Feb 2024)"
+        },
+        {
+          "name": "ss_3",
+          "label": "SS Group 3 (Oct 2024 - Mpakama A/A Training)"
+        },
+        {
+          "name": "ss_4",
+          "label": "SS Group 4 (Oct 2024 - Madwaleni Training)"
+        },
+        {
+          "name": "ss_5",
+          "label": "SS Group 5 (Nov 2025 Elliotdale)"
+        },
+        {
+          "name": "ss_6",
+          "label": "SS Group 6 (Nov 2025 Mqanduli)"
+        },
+        {
+          "name": "ss_other",
+          "label": "Other"
+        }
+      ]
+    },
+    {
+      "name": "ecdc_name",
+      "path": "ecdc_name",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"practitioner_list\")/root/item[name=${ecdc_practitioner}]/ecdc",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "practitioner_contact1",
+      "path": "practitioner_contact1",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"practitioner_list\")/root/item[name=${ecdc_practitioner}]/contact1",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "practitioner_contact2",
+      "path": "practitioner_contact2",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"practitioner_list\")/root/item[name=${ecdc_practitioner}]/contact2",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "ecdc_name_text",
+      "path": "ecdc_name_text",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"ecdc_list\")/root/item[name = ${ecdc_name}]/label",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "ecdc_area",
+      "path": "ecdc_area",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"ecdc_list\")/root/item[name = ${ecdc_name}]/area",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "ecdc_dsd",
+      "path": "ecdc_dsd",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"ecdc_list\")/root/item[name = ${ecdc_name}]/dsd",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "ecdc_practitioner_001",
+      "path": "ecdc_practitioner_001",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"ecdc_list\")/root/item[name = ${ecdc_name}]/practitioners",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "franchise_group",
+      "path": "franchise_group",
+      "group": null,
+      "type": "calculate",
+      "label": null,
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": "instance(\"ecdc_list\")/root/item[name = ${ecdc_name}]/franchise_group",
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "prac_note",
+      "path": "prac_note",
+      "group": null,
+      "type": "note",
+      "label": "Contact# : 0${practitioner_contact1}, 0${practitioner_contact2}",
+      "hint": null,
+      "required": false,
+      "relevant": "${outreach_type} != 'mapping' and ${prac_visit} = 'yes' and ${happened} != 'no'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "ecdc_note",
+      "path": "ecdc_note",
+      "group": null,
+      "type": "note",
+      "label": "ECDC: ${ecdc_name_text}; Area: ${ecdc_area};  DSD: ${ecdc_dsd}; Group: ${franchise_group}",
+      "hint": null,
+      "required": false,
+      "relevant": "${outreach_type} != 'mapping' and ${prac_visit} = 'yes' and ${happened} != 'no'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "Number_of_people_reached",
+      "path": "Number_of_people_reached",
+      "group": null,
+      "type": "integer",
+      "label": "Number of people reached",
+      "hint": "Large groups should be estimated",
+      "required": true,
+      "relevant": "${outreach_type} != 'mapping' and ${outreach_type} != 'update' and ${What_did_you_do_instead} != 'support' and ${happened} != 'no' and ${happened} != 'yes' and ${outreach_type} != 'interested'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "details_needed",
+      "path": "mapping/details_needed",
+      "group": "mapping",
+      "type": "select_multiple details",
+      "label": "Do any details need to be captured or updated?",
+      "hint": null,
+      "required": true,
+      "relevant": "${outreach_type} = 'update'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_multiple",
+      "choice_list": "details",
+      "choices": [
+        {
+          "name": "ecdc",
+          "label": "ECDC"
+        },
+        {
+          "name": "area",
+          "label": "Area/Village"
+        },
+        {
+          "name": "location",
+          "label": "Location"
+        },
+        {
+          "name": "contact",
+          "label": "Contact Details"
+        },
+        {
+          "name": "dsd",
+          "label": "DSD Details"
+        },
+        {
+          "name": "training",
+          "label": "Previous Training"
+        },
+        {
+          "name": "group",
+          "label": "Franchise Group"
+        },
+        {
+          "name": "attendance",
+          "label": "Attendance"
+        },
+        {
+          "name": "chief",
+          "label": "Chief"
+        },
+        {
+          "name": "headman",
+          "label": "Headman"
+        }
+      ]
+    },
+    {
+      "name": "area",
+      "path": "mapping/area",
+      "group": "mapping",
+      "type": "text",
+      "label": "Area/Village",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'area') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "ecdc_name_link",
+      "path": "mapping/ecdc_name_link",
+      "group": "mapping",
+      "type": "select_one_from_file ecdc_list.csv",
+      "label": "ECDC",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'ecdc') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one_from_file",
+      "external_file": "ecdc_list.csv",
+      "choices": "dynamic (loaded from external CSV attached to the form, not in this xlsx)"
+    },
+    {
+      "name": "ecdc_name_link_new",
+      "path": "mapping/ecdc_name_link_new",
+      "group": "mapping",
+      "type": "text",
+      "label": "What is the name of the ECDC",
+      "hint": "Check the name and the area",
+      "required": true,
+      "relevant": "${ecdc_name_link} = 'not_found'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "practitioner_whatsapp",
+      "path": "mapping/practitioner_whatsapp",
+      "group": "mapping",
+      "type": "select_one yesno",
+      "label": "Does Practitioner have whatsapp? (#1)",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'contact') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes' or selected(${outreach_type},'interested')",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "yesno",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "name": "practitioner_number_1",
+      "path": "mapping/practitioner_number_1",
+      "group": "mapping",
+      "type": "text",
+      "label": "Practitioner Contact Number (#1)",
+      "hint": "Needs to be a 10-digit phone number",
+      "required": true,
+      "relevant": "selected(${details_needed}, 'contact') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes' or selected(${outreach_type},'interested')",
+      "calculation": null,
+      "constraint": "regex(.,’^[0-9]{10}$’)",
+      "choice_filter": null
+    },
+    {
+      "name": "practitioner_number_2",
+      "path": "mapping/practitioner_number_2",
+      "group": "mapping",
+      "type": "text",
+      "label": "Practitioner Contact Number (#2)",
+      "hint": "Needs to be a 10-digit phone number",
+      "required": false,
+      "relevant": "selected(${details_needed}, 'contact') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes' or selected(${outreach_type},'interested')",
+      "calculation": null,
+      "constraint": "regex(.,’^[0-9]{10}$’)",
+      "choice_filter": null
+    },
+    {
+      "name": "location",
+      "path": "mapping/location",
+      "group": "mapping",
+      "type": "geopoint",
+      "label": "Location",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'location') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "dsd_registered",
+      "path": "mapping/dsd_registered",
+      "group": "mapping",
+      "type": "select_one yesno",
+      "label": "Registered with DSD?",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'dsd') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "yesno",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "name": "dsd_funded",
+      "path": "mapping/dsd_funded",
+      "group": "mapping",
+      "type": "select_one yesno",
+      "label": "Funded by DSD?",
+      "hint": null,
+      "required": true,
+      "relevant": "${dsd_registered} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "yesno",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "name": "chief",
+      "path": "mapping/chief",
+      "group": "mapping",
+      "type": "text",
+      "label": "Who is the local chief?",
+      "hint": "Please record this as NAME + SURNAME",
+      "required": true,
+      "relevant": "selected(${details_needed}, 'chief') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "headman",
+      "path": "mapping/headman",
+      "group": "mapping",
+      "type": "text",
+      "label": "Who is the local headman",
+      "hint": "Please record this as NAME + SURNAME",
+      "required": true,
+      "relevant": "selected(${details_needed}, 'headman') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "number_children",
+      "path": "mapping/number_children",
+      "group": "mapping",
+      "type": "integer",
+      "label": "How many children attend the ECDC",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'attendance') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "training_yn",
+      "path": "mapping/training_yn",
+      "group": "mapping",
+      "type": "select_one yesno",
+      "label": "Have they received training",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'training') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "yesno",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "name": "training_prev",
+      "path": "mapping/training_prev",
+      "group": "mapping",
+      "type": "select_multiple training",
+      "label": "What training have they received",
+      "hint": null,
+      "required": true,
+      "relevant": "${training_yn} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_multiple",
+      "choice_list": "training",
+      "choices": [
+        {
+          "name": "firstaid",
+          "label": "First Aid"
+        },
+        {
+          "name": "level4",
+          "label": "Level 4"
+        },
+        {
+          "name": "level5",
+          "label": "Level 5"
+        },
+        {
+          "name": "other",
+          "label": "Other"
+        }
+      ]
+    },
+    {
+      "name": "training_prev_other",
+      "path": "mapping/training_prev_other",
+      "group": "mapping",
+      "type": "text",
+      "label": "What other training have they had?",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${training_prev}, 'other')",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "photo_site",
+      "path": "mapping/photo_site",
+      "group": "mapping",
+      "type": "image",
+      "label": "Photo of the ECDC",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${details_needed}, 'location') or selected(${outreach_type}, 'mapping') and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "practitioners_trained",
+      "path": "support/practitioners_trained",
+      "group": "support",
+      "type": "note",
+      "label": "If more than one practitioner trained, please capture additional forms for each practitioner.",
+      "hint": null,
+      "required": false,
+      "relevant": "${happened} != 'no' and ${outreach_type} != 'mapping' and ${outreach_type} != 'update' and ${outreach_type} != 'mapping' and ${prac_visit} = 'yes'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    },
+    {
+      "name": "parents_enrolled",
+      "path": "support/parents_enrolled",
+      "group": "support",
+      "type": "integer",
+      "label": "How many parents are enrolled at the ECDC?",
+      "hint": null,
+      "required": true,
+      "relevant": "${outreach_type} = 'caregiver' and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": ". > 0 and . < 100",
+      "choice_filter": null
+    },
+    {
+      "name": "parents_present",
+      "path": "support/parents_present",
+      "group": "support",
+      "type": "integer",
+      "label": "How many parents were at the training?",
+      "hint": null,
+      "required": true,
+      "relevant": "${outreach_type} = 'caregiver' and ${happened} = 'yes'",
+      "calculation": null,
+      "constraint": ". > 0 and . < 100",
+      "choice_filter": null
+    },
+    {
+      "name": "bookdash",
+      "path": "support/bookdash",
+      "group": "support",
+      "type": "select_one yesno",
+      "label": "Did you give out BookDash books?",
+      "hint": null,
+      "required": true,
+      "relevant": "selected(${outreach_type}, 'support') or selected(${outreach_type}, 'caregiver') or selected(${outreach_type}, 'literacy_promotion') and ${happened} = 'yes' or ${happened} = 'else'",
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null,
+      "select_type": "select_one",
+      "choice_list": "yesno",
+      "choices": [
+        {
+          "name": "yes",
+          "label": "Yes"
+        },
+        {
+          "name": "no",
+          "label": "No"
+        }
+      ]
+    },
+    {
+      "name": "bookdash_children",
+      "path": "support/bookdash_children",
+      "group": "support",
+      "type": "integer",
+      "label": "No. given to children",
+      "hint": null,
+      "required": true,
+      "relevant": "${bookdash} = 'yes'",
+      "calculation": null,
+      "constraint": ". > 0 and . < 100",
+      "choice_filter": null
+    },
+    {
+      "name": "bookdash_perchild",
+      "path": "support/bookdash_perchild",
+      "group": "support",
+      "type": "integer",
+      "label": "No. given per child",
+      "hint": null,
+      "required": true,
+      "relevant": "${bookdash} = 'yes'",
+      "calculation": null,
+      "constraint": ". > 0 and . < 10",
+      "choice_filter": null
+    },
+    {
+      "name": "bookdash_practitioner",
+      "path": "support/bookdash_practitioner",
+      "group": "support",
+      "type": "integer",
+      "label": "No. given to practitioner",
+      "hint": null,
+      "required": true,
+      "relevant": "${bookdash} = 'yes'",
+      "calculation": null,
+      "constraint": ". >= 0 and . < 100",
+      "choice_filter": null
+    },
+    {
+      "name": "comments",
+      "path": "comments",
+      "group": null,
+      "type": "text",
+      "label": "Comments",
+      "hint": null,
+      "required": false,
+      "relevant": null,
+      "calculation": null,
+      "constraint": null,
+      "choice_filter": null
+    }
+  ]
+}

@@ -1,15 +1,23 @@
-import React from 'react';
+import { useMemo, useState } from 'react';
 import { useDashboardStats } from './api/useDashboardStats';
+import '../../styles/shared.css';
 import '../../styles/dashboard.css';
-import Sidebar from '../../layouts/Sidebar';
+import { formatDate, formatLabel } from '../../lib/format';
+import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { data, isLoading, error } = useDashboardStats();
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const yearOptions = useMemo(() => {
+    const years = [];
+    for (let y = currentYear; y >= currentYear - 5; y -= 1) years.push(y);
+    return years;
+  }, [currentYear]);
+  const { data, isLoading, error } = useDashboardStats(year);
 
   if (isLoading) {
     return (
       <div className="da-page">
-        <Sidebar />
         <div className="da-main">
           <div className="da-loading">Loading dashboard...</div>
         </div>
@@ -20,7 +28,6 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="da-page">
-        <Sidebar />
         <div className="da-main">
           <div className="da-error">Failed to load dashboard: {error.message}</div>
         </div>
@@ -29,84 +36,135 @@ export default function Dashboard() {
   }
 
   const stats = data!;
+  const staffRows = Object.entries(stats.visitsForYear.byStaff)
+    .sort(([, a], [, b]) => b.total - a.total);
 
   return (
     <div className="da-page">
-      <Sidebar />
       <div className="da-main">
         <header className="da-topbar">
           <h1 className="da-topbar__title">Dashboard Overview</h1>
+          <div className="da-year-control">
+            <label htmlFor="dashboard-year">Year</label>
+            <select
+              id="dashboard-year"
+              value={year}
+              onChange={(event) => setYear(Number(event.target.value))}
+            >
+              {yearOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
         </header>
 
         <div className="da-body">
           <div className="da-stats-grid">
-            <div className="da-stat-card">
+            <Link className="da-stat-card" to="/practitioners">
               <span className="da-stat-card__label">Total Practitioners</span>
               <span className="da-stat-card__value">{stats.totalPractitioners}</span>
-            </div>
-            <div className="da-stat-card">
+            </Link>
+            <Link className="da-stat-card" to="/map">
               <span className="da-stat-card__label">Total ECDCs</span>
               <span className="da-stat-card__value">{stats.totalEcdcs}</span>
-            </div>
-            <div className="da-stat-card">
-              <span className="da-stat-card__label">Visits This Year</span>
-              <span className="da-stat-card__value">{stats.visitsThisYear.total}</span>
-            </div>
-            <div className="da-stat-card">
+            </Link>
+            <Link className="da-stat-card" to={`/visits?from=${year}-01-01&to=${year}-12-31`}>
+              <span className="da-stat-card__label">Visits in {stats.selectedYear}</span>
+              <span className="da-stat-card__value">{stats.visitsForYear.total}</span>
+            </Link>
+            <Link className="da-stat-card" to={`/visits?from=${year}-01-01&to=${year}-12-31&status=did_not_happen`}>
               <span className="da-stat-card__label">Missed Visits</span>
               <span className="da-stat-card__value da-stat-card__value--warning">
-                {stats.visitsThisYear.didNotHappen}
+                {stats.visitsForYear.didNotHappen}
               </span>
-            </div>
-            <div className="da-stat-card">
+            </Link>
+            <Link className="da-stat-card" to="/map">
               <span className="da-stat-card__label">New Sites Mapped</span>
               <span className="da-stat-card__value da-stat-card__value--success">
-                {stats.visitsThisYear.mappingVisits}
+                {stats.visitsForYear.mappingVisits}
               </span>
-            </div>
+            </Link>
           </div>
 
-          <div className="da-section">
-            <h2 className="da-section__title">Visits by Type (Year)</h2>
+          <section className="da-section">
+            <h2 className="da-section__title">Visits by Type ({stats.selectedYear})</h2>
             <div className="da-chart-row">
-              {Object.entries(stats.visitsThisYear.byType).length === 0 ? (
-                <div className="da-empty">No visits recorded this year yet.</div>
+              {Object.entries(stats.visitsForYear.byType).length === 0 ? (
+                <div className="da-empty">No visits recorded for {stats.selectedYear} yet.</div>
               ) : (
-                Object.entries(stats.visitsThisYear.byType).map(([type, count]) => (
-                  <div key={type} className="da-type-bar">
-                    <span className="da-type-bar__label">{type.replace(/_/g, ' ')}</span>
+                Object.entries(stats.visitsForYear.byType).map(([type, count]) => (
+                  <Link key={type} className="da-type-bar" to={`/visits?from=${year}-01-01&to=${year}-12-31&type=${type}`}>
+                    <span className="da-type-bar__label">{formatLabel(type)}</span>
                     <span className="da-type-bar__value">{count}</span>
-                  </div>
+                  </Link>
                 ))
               )}
             </div>
-          </div>
+          </section>
 
-          <div className="da-section">
+          <section className="da-section">
+            <h2 className="da-section__title">Visits by Staff ({stats.selectedYear})</h2>
+            {staffRows.length === 0 ? (
+              <div className="da-empty">No visits recorded for {stats.selectedYear} yet.</div>
+            ) : (
+              <div className="da-table-wrap">
+                <table className="da-staff-table">
+                  <thead>
+                    <tr>
+                      <th>Staff Member</th>
+                      <th>Total</th>
+                      <th>Visit Types</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffRows.map(([staffName, staffStats]) => (
+                      <tr key={staffName}>
+                        <td>{staffName}</td>
+                        <td>{staffStats.total}</td>
+                        <td>
+                          <div className="da-type-chips">
+                            {Object.entries(staffStats.byType)
+                              .sort(([, a], [, b]) => b - a)
+                              .map(([type, count]) => (
+                                <span key={type} className="da-type-chip">
+                                  {formatLabel(type)} <strong>{count}</strong>
+                                </span>
+                              ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="da-section">
             <h2 className="da-section__title">Recent Visits</h2>
             <div className="da-recent-list">
               {stats.recentVisits.length === 0 ? (
                 <div className="da-empty">No recent visits found.</div>
               ) : (
-                stats.recentVisits.map(visit => (
+                stats.recentVisits.map((visit) => (
                   <div key={visit.id} className="da-recent-item">
                     <div className="da-recent-item__left">
                       <span className="da-recent-item__type">
-                        {visit.outreach_type?.replace(/_/g, ' ') || 'Unknown'}
+                        {formatLabel(visit.outreach_type)}
                       </span>
                       <span className="da-recent-item__details">
-                        {visit.practitioner?.name || 'Unknown Practitioner'} 
-                        {visit.practitioner?.ecdc?.name ? ` • ${visit.practitioner.ecdc.name}` : ''}
+                        {visit.practitioner?.name || 'Unknown Practitioner'}
+                        {visit.practitioner?.ecdc?.name ? ` - ${visit.practitioner.ecdc.name}` : ''}
                       </span>
                     </div>
                     <div className="da-recent-item__right">
-                      {visit.date ? new Date(visit.date).toLocaleDateString() : '—'}
+                      {formatDate(visit.date)}
                     </div>
                   </div>
                 ))
               )}
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>

@@ -13,7 +13,9 @@ export interface EcdcWithPractitioners {
   id: string;
   name: string | null;
   area: string | null;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
+  chief: string | null;
+  headman: string | null;
   practitioners: EcdcPractitioner[];
 }

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../auth/supabaseClient';
 import { toast } from 'sonner';
+import { requireRpcObject } from '../../../lib/rpcResult';
 
 export function useDeleteVisit() {
   const queryClient = useQueryClient();
@@ -9,8 +10,7 @@ export function useDeleteVisit() {
     mutationFn: async (id: string) => {
       const { data, error } = await supabase.rpc('soft_delete_outreach_visit', { v_id: id });
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Delete visit');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['visits'] });
@@ -29,8 +29,7 @@ export function useHardDeleteVisit() {
     mutationFn: async (id: string) => {
       const { data, error } = await supabase.rpc('hard_delete_outreach_visit', { v_id: id });
       if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
-      return data;
+      return requireRpcObject(data, 'Permanently delete visit');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['visits'] });

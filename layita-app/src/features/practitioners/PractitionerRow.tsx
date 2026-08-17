@@ -1,6 +1,7 @@
 // src/features/practitioners/PractitionerRow.tsx
 
 import { resolveGroupColor, resolveGroupNameShortForm } from "../../lib/Groupcolors";
+import { formatDate } from "../../lib/format";
 import { Practitioner } from "./types";
 import {
   daysSince,
@@ -18,12 +19,20 @@ interface Props {
   onMultiSelectToggle?: (e: React.SyntheticEvent) => void;
 }
 
-export default function PractitionerRow({ p, selected, lastVisit, onClick, isMultiSelected, onMultiSelectToggle }: Props) {
-  const color      = resolveGroupColor(p.group?.group_name);
-  const group      = p.group?.group_name;
-  const days       = daysSince(lastVisit);
+export default function PractitionerRow({
+  p,
+  selected,
+  lastVisit,
+  onClick,
+  isMultiSelected,
+  onMultiSelectToggle,
+}: Props) {
+  const color = resolveGroupColor(p.group?.group_name);
+  const group = p.group?.group_name;
+  const days = daysSince(lastVisit);
   const isSelected = selected?.id === p.id;
   const anySelected = !!selected;
+  const attendanceDate = p.ecdc?.attendance_updated || p.ecdc?.created_at;
 
   return (
     <div
@@ -42,14 +51,14 @@ export default function PractitionerRow({ p, selected, lastVisit, onClick, isMul
       )}
 
       <div className="p2-row__name-col">
-        <span className="p2-row__name">{p.name || "—"}</span>
+        <span className="p2-row__name">{p.name || "-"}</span>
         {group && (
           <span className="p2-row__group" style={{ color: color.fill }}>
             <span className="p2-row__group-full">{anySelected ? resolveGroupNameShortForm(group) : group}</span>
             <span className="p2-row__group-short">{resolveGroupNameShortForm(group)}</span>
           </span>
         )}
-        <span className="p2-row__ecdc-name"> Club </span>
+        <span className="p2-row__ecdc-name">Club</span>
       </div>
 
       <div className="p2-row__ecdc">
@@ -71,13 +80,11 @@ export default function PractitionerRow({ p, selected, lastVisit, onClick, isMul
       </div>
 
       <div className="p2-row__children-count">
-        {p.ecdc?.number_children ?? "—"}
-        <div className="p2-row__children-updated"> 
-          {p.ecdc?.attendance_updated ? new Date(p.ecdc.attendance_updated).toLocaleDateString("en-GB") : p.ecdc?.created_at ? new Date(p.ecdc.created_at).toLocaleDateString("en-GB") : "—"}
+        {p.ecdc?.number_children ?? "-"}
+        <div className="p2-row__children-updated">
+          {formatDate(attendanceDate)}
         </div>
       </div>
-
-     
 
       <div className="p2-row__flags">
         {p.has_whatsapp && (

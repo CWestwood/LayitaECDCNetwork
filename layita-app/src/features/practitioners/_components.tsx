@@ -2,6 +2,7 @@
 // ─── Shared atoms used across Practitioners feature ───────────────────────────
 
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
+import { formatDate } from "../../lib/format";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,10 +14,8 @@ export interface GroupColor {
 // ─── Pure helpers (exported so row/card/panel can use them) 
 
 export const fmtDate = (iso: string | null | undefined): string | null => {
-  if (!iso) return null;
-  const d = new Date(iso + "T00:00:00");
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
+  const formatted = formatDate(iso);
+  return formatted === "-" ? null : formatted;
 };
 
 export const daysSince = (iso: string | null | undefined): number => {
@@ -31,8 +30,8 @@ export const urgency = (days: number): { level: "none" | "danger" | "warning" | 
   return                        { level: "ok",      label: `${days}d ago`  };
 };
 
-export const trainingCount = (p: { training?: Record<string, boolean> | null }): number =>
-  TRAINING_FILTERS.filter((f) => p.training?.[f.key]).length;
+export const trainingCount = (p: { training?: Record<string, boolean | string | null> | null }): number =>
+  TRAINING_FILTERS.filter((f) => p.training?.[f.key] === true).length;
 
 // ─── Icon ─────────────────────────────────────────────────────────────────────
 
@@ -95,14 +94,14 @@ export function VisitBadge({ days }: { days: number }) {
 
 // ─── TrainingDots ─────────────────────────────────────────────────────────────
 
-export function TrainingDots({ practitioner }: { practitioner: { training?: Record<string, boolean> | null } }) {
+export function TrainingDots({ practitioner }: { practitioner: { training?: Record<string, boolean | string | null> | null } }) {
   const count = trainingCount(practitioner);
   return (
     <div className="p2-training-dots">
       {TRAINING_FILTERS.map((f) => (
         <span
           key={f.key}
-          className={`p2-training-dot ${practitioner.training?.[f.key] ? "p2-training-dot--has" : ""}`}
+          className={`p2-training-dot ${practitioner.training?.[f.key] === true ? "p2-training-dot--has" : ""}`}
           title={f.label}
         />
       ))}

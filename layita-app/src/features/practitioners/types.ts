@@ -7,11 +7,22 @@ export interface Practitioner {
   contact_number1: string | null;
   contact_number2: string | null;
   has_whatsapp: boolean | null;
+  status: string;
+  mapping_comments: string | null;
   dsd_funded: boolean | null;
   dsd_registered: boolean | null;
-  group: { group_name: string } | null;
-  ecdc: { name: string; area: string | null } | null;
-  training: Record<string, boolean> | null;
+  group: { id: string; group_name: string } | null;
+  ecdc: {
+    id: string;
+    name: string;
+    area: string | null;
+    chief?: string | null;
+    headman?: string | null;
+    number_children?: string | null;
+    attendance_updated?: string | null;
+    created_at?: string | null;
+  } | null;
+  training: Record<string, boolean | string | null> | null;
 }
 
 export interface OutreachVisit {

@@ -9,10 +9,8 @@ import { Practitioner } from "./types";
 import PractitionerRow  from "./PractitionerRow";
 import PractitionerCard from "./PractitionerCard";
 import {DetailPanel, DetailEmpty} from "./DetailPanel";
-import Sidebar from "../../layouts/Sidebar";
 import {
   daysSince,
-  trainingCount,
   Icon,
   Icons,
   GridIcon,
@@ -46,7 +44,7 @@ export default function Practitioners() {
   const [selectedIds,     setSelectedIds]     = useState<Set<string>>(new Set());
   const [search,          setSearch]          = useState("");
   const [sortKey,         setSortKey]         = useState<SortKey>("name_asc");
-  const [viewMode,        setViewMode]        = useState<"list" | "grid">("list");
+  const [viewMode] = useState<"list" | "grid">("list");
   const [activeGroups,    setActiveGroups]    = useState<string[]>([]);
   const [activeTraining,  setActiveTraining]  = useState<string[]>([]);
   const [trainingMode,    setTrainingMode]    = useState<"has" | "needs">("has");
@@ -63,7 +61,7 @@ export default function Practitioners() {
   const lastVisitMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const v of globalVisits) {
-      if (!map.has(v.practitioner_id)) {
+      if (v.practitioner_id && v.date && !map.has(v.practitioner_id)) {
         map.set(v.practitioner_id, v.date);
       }
     }
@@ -132,7 +130,7 @@ export default function Practitioners() {
         || p.group?.group_name?.toLowerCase().includes(q);
       const matchGroup    = activeGroups.length === 0 || activeGroups.includes(p.group?.group_name ?? "");
       const matchTraining = activeTraining.length === 0 || activeTraining.every((k) => {
-        const hasTraining = p.training?.[k] === true;
+        const hasTraining = (p.training as Record<string, boolean> | null)?.[k] === true;
         return trainingMode === "has" ? hasTraining : !hasTraining;
       });
       const matchSelected = !viewSelectedOnly || selectedIds.has(p.id);
@@ -145,8 +143,6 @@ export default function Practitioners() {
         case "name_desc":      return (b.name || "").localeCompare(a.name || "");
         case "visit_recent":   return daysSince(lastVisitMap.get(a.id)) - daysSince(lastVisitMap.get(b.id));
         case "visit_oldest":   return daysSince(lastVisitMap.get(b.id)) - daysSince(lastVisitMap.get(a.id));
-        case "training_most":  return trainingCount(b) - trainingCount(a);
-        case "training_least": return trainingCount(a) - trainingCount(b);
         case "ecdc_asc":       return (a.ecdc?.name || "").localeCompare(b.ecdc?.name || "");
         case "ecdc_desc":      return (b.ecdc?.name || "").localeCompare(a.ecdc?.name || "");
         case "area_asc":       return (a.ecdc?.area || "").localeCompare(b.ecdc?.area || "");
@@ -217,7 +213,6 @@ export default function Practitioners() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p2-page">
-      <Sidebar />
 
       <div className="p2-main">
 

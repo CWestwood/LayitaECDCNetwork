@@ -3,8 +3,9 @@
 import { useState, useMemo } from "react";
 import { resolveGroupColor } from "../../lib/Groupcolors";
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
-import { usePractitionerVisits } from "./api/usePractitioners";
-import { useAuditLogs } from "../layita/api/useAudit";
+import { usePractitionerLifecycle, usePractitionerVisits, useSetMappingComments, useSetPractitionerLifecycle } from "./api/usePractitioners";
+import { useAuth } from "../auth/useAuth";
+import { useAuditLogs, type AuditRow } from "../layita/api/useAudit";
 import { useDeletePractitioner } from "./api/useDeletePractitioner";
 import { Practitioner } from "./types";
 import { AdminSoftDeleteButton } from "../layita/components/AdminSoftDeleteButton";
@@ -45,8 +46,8 @@ const fmt = (val: string | null) => {
   return <span>{val}</span>;
 };
 
-function groupRows(rows: ReturnType<typeof useAuditLogs>["data"]) {
-  const map = new Map<string, { meta: (typeof rows)[0]; fields: typeof rows }>();
+function groupRows(rows: AuditRow[] | undefined) {
+  const map = new Map<string, { meta: AuditRow; fields: AuditRow[] }>();
   for (const row of rows ?? []) {
     const key = `${row.changed_at.slice(0, 19)}_${row.changed_by_name ?? "system"}`;
     if (!map.has(key)) map.set(key, { meta: row, fields: [] });
@@ -68,6 +69,11 @@ export function DetailPanel({ p, onClose }: Props) {
   const [showAllVisits, setShowAllVisits] = useState(false);
   const [expanded, setExpanded]           = useState<Set<string>>(new Set());
   const [editing, setEditing]             = useState(false);
+  const [lifecycleOpen, setLifecycleOpen] = useState(false);
+  const [lifecycle, setLifecycle] = useState({ status: p.status || "active", reason: "", comment: "", effectiveOn: new Date().toISOString().slice(0, 10) });
+  const [mappingComments, setMappingComments] = useState(p.mapping_comments || "");
+  const [mappingReason, setMappingReason] = useState("");
+  const { can } = useAuth();
 
   const { data: visits = [],    isLoading: visitsLoading } = usePractitionerVisits(p.id);
   const { data: auditRows = [], isLoading: auditLoading  } = useAuditLogs({
@@ -75,6 +81,9 @@ export function DetailPanel({ p, onClose }: Props) {
     tableName: "practitioners",
   });
   const { mutate: deletePractitioner, isPending: deletePending } = useDeletePractitioner();
+  const { data: lifecycleHistory = [] } = usePractitionerLifecycle(p.id);
+  const lifecycleMutation = useSetPractitionerLifecycle();
+  const setMapping = useSetMappingComments();
 
   const color         = resolveGroupColor(p.group?.group_name);
   const lastVisitDate = visits[0]?.date;
@@ -82,7 +91,6 @@ export function DetailPanel({ p, onClose }: Props) {
   const { level, label: visitLabel } = urgency(days);
   const count         = trainingCount(p);
   const visibleVisits = showAllVisits ? visits : visits.slice(0, VISIT_DISPLAY_LIMIT);
-  const mappingVisits = visits.filter(v => v.outreach_type === "ECDC Mapping");
 
   // Bug 1 fixed: useMemo was missing its callback — was `useMemo([rows])`
   const meaningful = useMemo(
@@ -178,7 +186,7 @@ export function DetailPanel({ p, onClose }: Props) {
             <div className="p2-detail__meta-item">
               <div className="p2-detail__meta-label">Mapping Comments</div>
               <div className="p2-visit__comment ">
-                {mappingVisits.find(v => v.comments)?.comments || "No comments"}
+                {p.mapping_comments || "No comments"}
               </div>
             </div>
           </div>
@@ -186,11 +194,20 @@ export function DetailPanel({ p, onClose }: Props) {
 
         {/* Flag pills */}
         <div className="p2-detail__flags">
+          <FlagPill active={p.status === "active"}>{p.status || "Active"}</FlagPill>
           <FlagPill active={!!p.has_whatsapp}>WhatsApp</FlagPill>
           <FlagPill active={!!p.dsd_funded}>DSD Funded</FlagPill>
           <FlagPill active={!!p.dsd_registered}>DSD Registered</FlagPill>
         </div>
       </div>
+
+      {can("view_quality") && <section className="p2-detail__section p2-lifecycle">
+        <div className="p2-detail__section-title">Practitioner lifecycle and mapping notes</div>
+        <button className="lyt-btn" onClick={() => setLifecycleOpen((value) => !value)}>{lifecycleOpen ? "Close lifecycle form" : "Change status"}</button>
+        {lifecycleOpen && <div className="p2-lifecycle__form"><label>Status<select value={lifecycle.status} onChange={(event) => setLifecycle({ ...lifecycle, status: event.target.value })}><option value="active">Active</option><option value="inactive">Inactive</option><option value="interested">Interested</option></select></label><label>Effective date<input type="date" value={lifecycle.effectiveOn} onChange={(event) => setLifecycle({ ...lifecycle, effectiveOn: event.target.value })} /></label><label>Reason<input value={lifecycle.reason} onChange={(event) => setLifecycle({ ...lifecycle, reason: event.target.value })} /></label><label>Comment<textarea value={lifecycle.comment} onChange={(event) => setLifecycle({ ...lifecycle, comment: event.target.value })} /></label><button className="lyt-btn" disabled={lifecycle.reason.trim().length < 3 || lifecycleMutation.isPending} onClick={() => lifecycleMutation.mutate({ id: p.id, ...lifecycle }, { onSuccess: () => setLifecycleOpen(false) })}>Save status</button></div>}
+        {lifecycleHistory.length > 0 && <div className="p2-lifecycle__history">{lifecycleHistory.map((event) => <div key={event.id}><strong>{event.status}</strong><span>{event.effective_on} · {event.reason || "No reason recorded"}</span></div>)}</div>}
+        <label className="p2-lifecycle__mapping">Mapping comments<textarea value={mappingComments} onChange={(event) => setMappingComments(event.target.value)} /><input placeholder="Reason for changing these notes" value={mappingReason} onChange={(event) => setMappingReason(event.target.value)} /><button className="lyt-btn" disabled={mappingReason.trim().length < 5 || setMapping.isPending} onClick={() => setMapping.mutate({ id: p.id, comments: mappingComments, reason: mappingReason }, { onSuccess: () => setMappingReason("") })}>Save mapping comments</button></label>
+      </section>}
 
       {/* ── Training ── */}
       <section className="p2-detail__section">

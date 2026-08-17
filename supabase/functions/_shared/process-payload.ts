@@ -1,51 +1,132 @@
 import { supabase } from "./supabase-client.ts";
-// Define the constants missing from the original file
-const MAPPING_OUTREACH_TYPES = [
-  "mapping",
-  "baseline",
-  "full_audit"
-];
-const LOOKUP_ONLY_TYPES = [
+
+type SupabaseClientLike = typeof supabase;
+type Payload = Record<string, unknown>;
+type Warnings = string[];
+type Geopoint = {
+  latitude: number;
+  longitude: number;
+  altitude: number | null;
+  accuracy: number | null;
+};
+
+export const PROCESSOR_VERSION = "phase2-form-schema-2026-08-16";
+
+type ResolutionDecision = {
+  canonical_ecdc_id: string | null;
+  canonical_practitioner_ids: string[] | null;
+  responsible_staff_user_id: string | null;
+  reason_code: string;
+  decision: Record<string, unknown>;
+};
+
+const MAPPING_OUTREACH_TYPES = new Set(["mapping", "baseline", "full_audit"]);
+const LOOKUP_ONLY_TYPES = new Set([
   "support",
   "caregiver",
-  "literacy"
-];
+  "literacy",
+  "literacy_promotion",
+]);
+const INTERESTED_OUTREACH_TYPES = new Set(["interested"]);
+const UPDATE_OUTREACH_TYPES = new Set(["update", "update_ecdc_details"]);
+
+const MISSING_CHOICE_VALUES = new Set(["", "none", "not_found", "null", "undefined"]);
+const DASHED_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const COMPACT_HEX_RE = /^[0-9a-f]{32}$/i;
+
+const labelCache = new Map<string, string | null>();
+const LABEL_CACHE_LIMIT = 500;
+
 /* =========================================================================
    CORE PROCESSING
-   ========================================================================= */ export async function processSubmission(instanceId, payload) {
-  const warnings = [];
-  const outreachType = String(payload.outreach_type ?? "").trim();
-  // --- Resolve shared lookup values in parallel ---
-  const [dataCapturerId, groupId, transportTypeLabel, outreachTypeLabel, happenedLabel, groupLabel] = await Promise.all([
-    resolveDataCapturer(payload, warnings),
-    resolveGroup(payload),
-    getLabel("transport", payload.transport_type),
-    getLabel("outreach_type", outreachType),
-    getLabel("yesno_other", payload["happened"]),
-    getLabel("group", payload["group"])
-  ]);
-  // --- Workflow-specific practitioner/ECDC resolution ---
-  let primaryPractitionerId = null;
-  let ecdcId = null;
-  if (MAPPING_OUTREACH_TYPES.includes(outreachType)) {
-    ecdcId = await handleEcdcSync(payload, warnings);
-    primaryPractitionerId = await handlePractitionerSync(payload, ecdcId, groupId, groupLabel, warnings);
-    await handleTrainingSync(payload, primaryPractitionerId, warnings);
-  } else if (LOOKUP_ONLY_TYPES.includes(outreachType)) {
-    primaryPractitionerId = await lookupPractitionerOnly(payload, instanceId, warnings);
-  } else {
-    warnings.push(`Unrecognized outreach type: "${outreachType}" — visit recorded without practitioner link`);
+   ========================================================================= */
+
+export async function processSubmission(
+  instanceId: string,
+  payload: Payload,
+  db: SupabaseClientLike = supabase,
+) {
+  if (!textValue(payload._uuid)) payload = { ...payload, _uuid: instanceId };
+  const warnings: Warnings = [];
+  const outreachType = textValue(payload.outreach_type).toLowerCase();
+  const outreachOutcome = textValue(payload.happened).toLowerCase();
+  const capturedLocation = parseGeopoint(payload, warnings);
+  const resolution = await loadResolutionDecision(db, instanceId, warnings);
+
+  if (resolution?.reason_code.startsWith("QUARANTINED_")) {
+    return {
+      status: "quarantined",
+      warnings,
+      provenance: {
+        processor_version: PROCESSOR_VERSION,
+        resolution_reason_code: resolution.reason_code,
+      },
+    };
   }
-  // --- Build visit record, coercing and validating numeric fields ---
+
+  const [
+    dataCapturerId,
+    groupId,
+    transportTypeLabel,
+    outreachTypeLabel,
+    happenedLabel,
+    didInsteadLabel,
+    groupLabel,
+  ] = await Promise.all([
+    resolveDataCapturer(db, payload, warnings, resolution?.responsible_staff_user_id ?? null),
+    resolveGroup(db, payload),
+    getLabel(db, "transport", payload.transport_type),
+    getLabel(db, "outreach_type", outreachType),
+    getLabel(db, "yesno_other", payload.happened),
+    getLabel(db, "vk2fa82", payload.What_did_you_do_instead),
+    getLabel(db, "group", payload.group),
+  ]);
+
+  let primaryPractitionerId: string | null = null;
+  let ecdcId: string | null = null;
+  const resolvedPractitionerIds = resolution?.canonical_practitioner_ids ?? [];
+  const resolvedPrimaryPractitionerId = resolvedPractitionerIds[0] ?? null;
+
+  if (
+    UPDATE_OUTREACH_TYPES.has(outreachType) ||
+    (MAPPING_OUTREACH_TYPES.has(outreachType) && outreachOutcome !== "no" && outreachOutcome !== "else")
+  ) {
+    ecdcId = await handleEcdcSync(
+      db, payload, warnings, resolution?.canonical_ecdc_id ?? null, capturedLocation,
+    );
+    primaryPractitionerId = await handlePractitionerSync(
+      db, payload, ecdcId, groupId, groupLabel, warnings, resolvedPrimaryPractitionerId,
+    );
+    await handleTrainingSync(db, payload, primaryPractitionerId, warnings);
+  } else if (INTERESTED_OUTREACH_TYPES.has(outreachType)) {
+    primaryPractitionerId = await handleInterestedPractitionerSync(
+      db, payload, groupId, groupLabel, warnings, resolvedPrimaryPractitionerId,
+    );
+  } else if (LOOKUP_ONLY_TYPES.has(outreachType) && outreachOutcome !== "no") {
+    primaryPractitionerId = resolvedPrimaryPractitionerId ??
+      await lookupPractitionerOnly(db, payload, instanceId, warnings);
+  } else if (
+    (MAPPING_OUTREACH_TYPES.has(outreachType) && (outreachOutcome === "no" || outreachOutcome === "else")) ||
+    (LOOKUP_ONLY_TYPES.has(outreachType) && outreachOutcome === "no")
+  ) {
+    // These branches intentionally omit practitioner/ECDC questions in the
+    // current XLSForm, so their absence is not an unmatched-reference error.
+    primaryPractitionerId = resolvedPrimaryPractitionerId;
+  } else {
+    warnings.push(`Unrecognized outreach type: "${outreachType}" - visit recorded without practitioner link`);
+  }
+
   const transportCost = safePositiveNumeric(payload.transport_cost, "transport_cost", warnings);
   const transportKm = safePositiveNumeric(payload.km_logged, "transport_km", warnings);
+
   const visitRecord = {
-    date: payload.outreach_date,
+    date: payload.outreach_date || null,
     data_capturer_id: dataCapturerId,
-    outreach_type: outreachTypeLabel,
+    outreach_type: outreachTypeLabel ?? outreachType,
     comments: payload.comments ?? null,
     outreach_happened: happenedLabel,
-    did_instead: payload.something_else ?? null,
+    did_instead: didInsteadLabel ?? payload.What_did_you_do_instead ?? payload.something_else ?? null,
     transport_type: transportTypeLabel,
     transport_cost: transportCost,
     transport_km: transportKm,
@@ -55,241 +136,733 @@ const LOOKUP_ONLY_TYPES = [
     children_books: safeInt(payload["support/bookdash_children"]),
     books_per_child: safeInt(payload["support/bookdash_perchild"]),
     books_to_practitioner: safeInt(payload["support/bookdash_practitioner"]),
-    photos_taken: !!payload["mapping/photo_site"],
-    // Provenance tracking
+    photos_taken: Boolean(payload["mapping/photo_site"]),
     kobo_instance_id: instanceId,
-    source: "kobo"
+    source: "kobo",
+    people_reached: safeInt(payload.Number_of_people_reached),
+    capture_started_at: safeTimestamp(payload.start, "start", warnings),
+    capture_ended_at: safeTimestamp(payload.end, "end", warnings),
+    public_transport_accessible: yesNoBoolean(payload.Is_this_site_accessi_by_public_transport),
+    bookdash_given: yesNoBoolean(payload["support/bookdash"]),
+    captured_latitude: capturedLocation?.latitude ?? null,
+    captured_longitude: capturedLocation?.longitude ?? null,
+    captured_altitude_m: capturedLocation?.altitude ?? null,
+    captured_accuracy_m: capturedLocation?.accuracy ?? null,
   };
-  const { data: visitData, error: visitError } = await supabase.from("outreach_visits").insert(visitRecord).select("id").single();
+
+  const { data: visitData, error: visitError } = await db
+    .from("outreach_visits")
+    .upsert(visitRecord, { onConflict: "kobo_instance_id" })
+    .select("id")
+    .single();
+
   if (visitError) {
-    console.error("FATAL: visit insert failed:", visitError);
+    console.error("FATAL: visit upsert failed:", visitError);
     return {
       status: "failed",
       warnings,
-      error: `Visit insert failed: ${visitError.message}`
+      error: `Visit upsert failed: ${visitError.message}`,
     };
   }
-  // A visit with unresolved practitioner is partial, not a failure
-  const finalStatus = warnings.length > 0 ? "partial" : "success";
+
+  const participantIds = Array.from(new Set([
+    primaryPractitionerId,
+    ...resolvedPractitionerIds,
+  ].filter((id): id is string => Boolean(id))));
+  await syncVisitParticipants(db, visitData.id, primaryPractitionerId, participantIds, warnings);
+  await syncVisitSource(db, visitData.id, instanceId, warnings);
+  const attachmentCount = await syncVisitAttachment(db, visitData.id, instanceId, payload, warnings);
+
   return {
-    status: finalStatus,
+    status: warnings.length > 0 ? "partial" : "success",
     visitId: visitData.id,
-    warnings
+    warnings,
+    provenance: {
+      processor_version: PROCESSOR_VERSION,
+      resolution_reason_code: resolution?.reason_code ?? null,
+      participant_count: participantIds.length,
+      attachment_count: attachmentCount,
+    },
   };
 }
+
 /* =========================================================================
    HELPERS: LABEL LOOKUPS
-   ========================================================================= */ async function getLabel(list, value) {
-  if (!value) return null;
-  const { data } = await supabase.from("kobo_label").select("label").eq("list_name", list).eq("name", value).maybeSingle();
-  return data?.label ?? value;
+   ========================================================================= */
+
+async function getLabel(db: SupabaseClientLike, list: string, value: unknown) {
+  const normalizedValue = textValue(value);
+  if (!normalizedValue) return null;
+
+  const key = `${list}:${normalizedValue}`;
+  if (labelCache.has(key)) return labelCache.get(key) ?? normalizedValue;
+
+  const { data } = await db
+    .from("kobo_label")
+    .select("label")
+    .eq("list_name", list)
+    .eq("name", normalizedValue)
+    .maybeSingle();
+
+  const label = data?.label ?? normalizedValue;
+  if (labelCache.size >= LABEL_CACHE_LIMIT) {
+    const oldestKey = labelCache.keys().next().value;
+    if (oldestKey) labelCache.delete(oldestKey);
+  }
+  labelCache.set(key, label);
+  return label;
 }
-function parseMultiSelect(v) {
+
+function parseMultiSelect(v: unknown) {
   if (!v) return [];
-  return String(v).split(" ").filter(Boolean);
+  return String(v).trim().split(/\s+/).filter(Boolean);
 }
+
 /* =========================================================================
    HELPERS: NUMERIC COERCION
-   ========================================================================= */ function safeInt(value) {
+   ========================================================================= */
+
+function safeInt(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
-  const n = parseInt(String(value), 10);
-  return isNaN(n) ? null : n;
+  const n = Number(String(value).trim());
+  return Number.isInteger(n) ? n : null;
 }
-function safeFloat(value) {
+
+function safeFloat(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const n = parseFloat(String(value));
-  return isNaN(n) ? null : n;
+  return Number.isNaN(n) ? null : n;
 }
-/**
- * Parses a numeric field and enforces the DB check constraint (>= 0).
- * Logs a warning and returns null rather than letting Postgres reject the row.
- */ function safePositiveNumeric(value, fieldName, warnings) {
+
+function safePositiveNumeric(value: unknown, fieldName: string, warnings: Warnings) {
   const n = safeFloat(value);
   if (n === null) return null;
   if (n < 0) {
-    warnings.push(`${fieldName} was negative (${n}) — stored as null`);
+    warnings.push(`${fieldName} was negative (${n}) - stored as null`);
     return null;
   }
   return n;
 }
+
+function safeTimestamp(value: unknown, fieldName: string, warnings: Warnings) {
+  const raw = textValue(value);
+  if (!raw) return null;
+  const timestamp = new Date(raw);
+  if (Number.isNaN(timestamp.getTime())) {
+    warnings.push(`${fieldName} was not a valid timestamp - stored as null`);
+    return null;
+  }
+  return timestamp.toISOString();
+}
+
+function yesNoBoolean(value: unknown) {
+  const normalized = textValue(value).toLowerCase();
+  if (normalized === "yes") return true;
+  if (normalized === "no") return false;
+  return null;
+}
+
 /* =========================================================================
    HELPERS: REFERENCE RESOLUTION
-   ========================================================================= */ async function resolveDataCapturer(payload, warnings) {
+   ========================================================================= */
+
+async function resolveDataCapturer(
+  db: SupabaseClientLike,
+  payload: Payload,
+  warnings: Warnings,
+  resolvedProfileId: string | null,
+) {
+  if (resolvedProfileId) {
+    const { data: profile, error } = await db
+      .from("profiles")
+      .select("layita_staff_id")
+      .eq("id", resolvedProfileId)
+      .maybeSingle();
+    if (error) warnings.push(`Ledger staff lookup failed: ${error.message}`);
+    if (profile?.layita_staff_id) return profile.layita_staff_id;
+  }
   if (!payload.data_capturer) return null;
-  const staffName = await getLabel("layitastaff", payload.data_capturer);
-  const { data: staff } = await supabase.from("layita_staff").select("id").ilike("name", staffName ?? "").maybeSingle();
+
+  const staffName = await getLabel(db, "layitastaff", payload.data_capturer);
+  const { data: staff } = await db
+    .from("layita_staff")
+    .select("id")
+    .ilike("name", staffName ?? "")
+    .maybeSingle();
+
   if (!staff) {
     warnings.push(`Data capturer "${payload.data_capturer}" not found in layita_staff`);
     return null;
   }
+
   return staff.id;
 }
-async function resolveGroup(payload) {
-  if (!payload["group"]) return null;
-  const groupName = await getLabel("group", payload["group"]);
-  const { data: group } = await supabase.from("groups").select("id").ilike("group_name", groupName ?? "").maybeSingle();
+
+async function resolveGroup(db: SupabaseClientLike, payload: Payload) {
+  if (!payload.group) return null;
+
+  const groupName = await getLabel(db, "group", payload.group);
+  const { data: group } = await db
+    .from("groups")
+    .select("id")
+    .ilike("group_name", groupName ?? "")
+    .maybeSingle();
+
   return group?.id ?? null;
 }
+
 /* =========================================================================
    HELPERS: ECDC / PRACTITIONER SYNC
-   ========================================================================= */ async function handleEcdcSync(payload, warnings) {
-  let name = payload["mapping/ecdc_name_link"];
-  if (!name || name === "not_found" || name === "none") {
-    name = payload["mapping/ecdc_name_link_new"];
-  }
-  if (!name) {
-    warnings.push("No ECDC name found in mapping payload — ECDC not synced");
-    return null;
-  }
-  const { data: ecdc } = await supabase.from("ecdc_list").select("id").ilike("name", name).maybeSingle();
-  const ecdcData = {
-    name
-  };
-  if ("mapping/area" in payload) ecdcData.area = payload["mapping/area"];
-  if ("mapping/number_children" in payload) ecdcData.number_children = payload["mapping/number_children"];
-  if ("mapping/chief" in payload) ecdcData.chief = payload["mapping/chief"];
-  if ("mapping/headman" in payload) ecdcData.headman = payload["mapping/headman"];
-  if ("mapping/dsd_registered" in payload) ecdcData.dsd_registered = payload["mapping/dsd_registered"] === "yes";
-  if ("mapping/dsd_funded" in payload) ecdcData.dsd_funded = payload["mapping/dsd_funded"] === "yes";
-  if (payload["mapping/location"]) {
-    const coords = String(payload["mapping/location"]).split(" ");
-    if (coords.length >= 2) {
-      const lat = parseFloat(coords[0]);
-      const lng = parseFloat(coords[1]);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        ecdcData.latitude = lat;
-        ecdcData.longitude = lng;
-      } else {
-        warnings.push(`ECDC location coords malformed: "${payload["mapping/location"]}"`);
-      }
+   ========================================================================= */
+
+async function handleEcdcSync(
+  db: SupabaseClientLike,
+  payload: Payload,
+  warnings: Warnings,
+  resolvedEcdcId: string | null,
+  capturedLocation: Geopoint | null,
+) {
+  const selectedValue = firstText(payload, [
+    "mapping/ecdc_name_link",
+    "ecdc_name",
+    "ecdc_name_link",
+  ]);
+  const newName = firstText(payload, ["mapping/ecdc_name_link_new", "ecdc_name_link_new"]);
+  const selectedIsMissing = isMissingChoice(selectedValue);
+  const selectedUuid = canonicalUuid(selectedValue);
+
+  let ecdc: { id: string; name?: string | null } | null = null;
+  let name: string | null = selectedIsMissing ? newName : selectedValue;
+
+  if (resolvedEcdcId) {
+    const { data, error } = await db.from("ecdc_list").select("id, name").eq("id", resolvedEcdcId).maybeSingle();
+    if (error) warnings.push(`Ledger ECDC lookup failed: ${error.message}`);
+    if (data) {
+      ecdc = data;
+      name = newName || data.name || name;
     }
   }
+
+  if (!ecdc && selectedUuid) {
+    ecdc = await findRecordByExternalKey(db, "ecdc_list", selectedUuid, selectedValue, warnings, "ECDC");
+    name = newName || ecdc?.name || null;
+    if (!ecdc && !newName) {
+      warnings.push(`ECDC selector "${selectedValue}" looked like an identifier but did not match an ECDC`);
+      await logUnmatched(db, textValue(payload._uuid) || null, "mapping/ecdc_name_link", selectedValue, warnings);
+      return null;
+    }
+  } else if (!ecdc && !selectedIsMissing && selectedValue) {
+    const { data } = await db.from("ecdc_list").select("id, name").ilike("name", selectedValue).maybeSingle();
+    ecdc = data;
+  }
+
+  if (!name || looksLikeIdentifier(name)) {
+    warnings.push("No usable ECDC name found in mapping/update payload - ECDC not synced");
+    return ecdc?.id ?? null;
+  }
+
+  const ecdcData: Record<string, unknown> = { name };
+  assignIfPresent(ecdcData, "area", payload, ["mapping/area", "area"]);
+  assignIfPresent(ecdcData, "number_children", payload, ["mapping/number_children", "number_children"]);
+  assignIfPresent(ecdcData, "chief", payload, [
+    "mapping/chief",
+    "chief",
+    "mapping/What_is_the_name_of_your_Chief",
+  ]);
+  assignIfPresent(ecdcData, "headman", payload, [
+    "mapping/headman",
+    "headman",
+    "mapping/What_is_the_name_of_your_Headman",
+  ]);
+  if (capturedLocation) {
+    ecdcData.latitude = capturedLocation.latitude;
+    ecdcData.longitude = capturedLocation.longitude;
+  }
+
   if (ecdc) {
-    const { error } = await supabase.from("ecdc_list").update(ecdcData).eq("id", ecdc.id);
+    const { error } = await db.from("ecdc_list").update(ecdcData).eq("id", ecdc.id);
     if (error) warnings.push(`ECDC update failed for "${name}": ${error.message}`);
     return ecdc.id;
-  } else {
-    const { data: newEcdc, error } = await supabase.from("ecdc_list").insert({
-      ...ecdcData,
-      id: crypto.randomUUID()
-    }).select("id").single();
-    if (error) {
-      warnings.push(`ECDC insert failed for "${name}": ${error.message}`);
-      return null;
-    }
-    return newEcdc.id;
   }
-}
-async function handlePractitionerSync(payload, ecdcFkId, groupId, groupLabel, warnings) {
-  let name = payload.ecdc_practitioner;
-  if (!name || name === "not_found" || name === "none") {
-    name = payload.practitioner_new;
-  }
-  if (!name) {
-    warnings.push("No practitioner name found in mapping payload");
+
+  const { data: newEcdc, error } = await db
+    .from("ecdc_list")
+    .insert({ ...ecdcData, id: crypto.randomUUID() })
+    .select("id")
+    .single();
+
+  if (error) {
+    warnings.push(`ECDC insert failed for "${name}": ${error.message}`);
     return null;
   }
-  // --- Similarity check: warn if near-duplicates exist ---
-  const { data: similar } = await supabase.rpc("find_similar_practitioners", {
-    search_name: name
+
+  return newEcdc.id;
+}
+
+async function handlePractitionerSync(
+  db: SupabaseClientLike,
+  payload: Payload,
+  ecdcFkId: string | null,
+  groupId: string | null,
+  groupLabel: string | null,
+  warnings: Warnings,
+  resolvedPractitionerId: string | null,
+) {
+  return upsertPractitioner(db, payload, {
+    ecdcFkId,
+    groupId,
+    groupLabel,
+    warnings,
+    status: null,
+    preferNewName: false,
+    resolvedPractitionerId,
   });
-  const { data: prac } = await supabase.from("practitioners").select("id").ilike("name", name).maybeSingle();
-  // If no exact match but similar records exist, flag for admin review
-  if (!prac && similar && similar.length > 0) {
-    warnings.push(`Practitioner "${name}" is new but similar names exist: ` + similar.map((s)=>`"${s.name}" (${Math.round(s.similarity * 100)}%)`).join(", ") + ` — created new record; review for duplicates`);
+}
+
+async function handleInterestedPractitionerSync(
+  db: SupabaseClientLike,
+  payload: Payload,
+  groupId: string | null,
+  groupLabel: string | null,
+  warnings: Warnings,
+  resolvedPractitionerId: string | null,
+) {
+  return upsertPractitioner(db, payload, {
+    ecdcFkId: null,
+    groupId,
+    groupLabel,
+    warnings,
+    status: "interested",
+    preferNewName: true,
+    resolvedPractitionerId,
+  });
+}
+
+async function upsertPractitioner(
+  db: SupabaseClientLike,
+  payload: Payload,
+  options: {
+    ecdcFkId: string | null;
+    groupId: string | null;
+    groupLabel: string | null;
+    warnings: Warnings;
+    status: string | null;
+    preferNewName: boolean;
+    resolvedPractitionerId: string | null;
+  },
+) {
+  const { ecdcFkId, groupId, groupLabel, warnings, status, preferNewName, resolvedPractitionerId } = options;
+  const selectedValue = textValue(payload.ecdc_practitioner);
+  const newName = textValue(payload.practitioner_new);
+  const selectedIsMissing = isMissingChoice(selectedValue);
+  const selectedUuid = canonicalUuid(selectedValue);
+
+  let practitioner: { id: string; name?: string | null } | null = null;
+  let name: string | null = preferNewName ? newName : selectedIsMissing ? newName : selectedValue;
+
+  if (resolvedPractitionerId) {
+    const { data, error } = await db
+      .from("practitioners").select("id, name").eq("id", resolvedPractitionerId).maybeSingle();
+    if (error) warnings.push(`Ledger practitioner lookup failed: ${error.message}`);
+    if (data) {
+      practitioner = data;
+      name = newName || data.name || name;
+    }
   }
-  const pracData = {
-    name
-  };
-  if ("mapping/practitioner_number_1" in payload) pracData.contact_number1 = payload["mapping/practitioner_number_1"];
-  if ("mapping/practitioner_number_2" in payload) pracData.contact_number2 = payload["mapping/practitioner_number_2"];
-  if ("mapping/practitioner_whatsapp" in payload) pracData.has_whatsapp = payload["mapping/practitioner_whatsapp"] === "yes";
-  if ("mapping/dsd_registered" in payload) pracData.dsd_registered = payload["mapping/dsd_registered"] === "yes";
-  if ("mapping/dsd_funded" in payload) pracData.dsd_funded = payload["mapping/dsd_funded"] === "yes";
-  if (groupId) pracData.group_id = groupId;
-  if (groupLabel) pracData.group = groupLabel;
-  if (ecdcFkId) pracData.ecdc_id = ecdcFkId;
-  if (prac) {
-    const { error } = await supabase.from("practitioners").update(pracData).eq("id", prac.id);
-    if (error) warnings.push(`Practitioner update failed for "${name}": ${error.message}`);
-    return prac.id;
-  } else {
-    const { data: newPrac, error } = await supabase.from("practitioners").insert(pracData).select("id").single();
-    if (error) {
-      warnings.push(`Practitioner insert failed for "${name}": ${error.message}`);
+
+  if (!practitioner && !selectedIsMissing && selectedUuid) {
+    practitioner = await findRecordByExternalKey(
+      db,
+      "practitioners",
+      selectedUuid,
+      selectedValue,
+      warnings,
+      "Practitioner",
+    );
+    name = newName || practitioner?.name || null;
+    if (!practitioner && !newName) {
+      warnings.push(`Practitioner selector "${selectedValue}" looked like an identifier but did not match a practitioner`);
+      await logUnmatched(db, textValue(payload._uuid) || null, "ecdc_practitioner", selectedValue, warnings);
       return null;
     }
-    return newPrac.id;
+  } else if (!practitioner && !selectedIsMissing && selectedValue) {
+    const { data } = await db.from("practitioners").select("id, name").ilike("name", selectedValue).maybeSingle();
+    practitioner = data;
   }
+
+  if (!name || looksLikeIdentifier(name)) {
+    warnings.push("No usable practitioner name found in payload");
+    return practitioner?.id ?? null;
+  }
+
+  if (!practitioner) {
+    const { data: similar } = await db.rpc("find_similar_practitioners", { search_name: name });
+    if (similar && similar.length > 0) {
+      warnings.push(
+        `Practitioner "${name}" is new but similar names exist: ` +
+          similar.map((s: { name: string; similarity: number }) => `"${s.name}" (${Math.round(s.similarity * 100)}%)`).join(", ") +
+          " - created new record; review for duplicates",
+      );
+    }
+  }
+
+  const practitionerData: Record<string, unknown> = { name };
+  assignPhoneIfPresent(practitionerData, "contact_number1", payload, [
+    "mapping/practitioner_number_1",
+    "practitioner_number_1",
+  ], warnings);
+  assignPhoneIfPresent(practitionerData, "contact_number2", payload, [
+    "mapping/practitioner_number_2",
+    "practitioner_number_2",
+  ], warnings);
+  assignBooleanIfPresent(practitionerData, "has_whatsapp", payload, [
+    "mapping/practitioner_whatsapp",
+    "practitioner_whatsapp",
+  ]);
+  assignBooleanIfPresent(practitionerData, "dsd_registered", payload, ["mapping/dsd_registered", "dsd_registered"]);
+  assignBooleanIfPresent(practitionerData, "dsd_funded", payload, ["mapping/dsd_funded", "dsd_funded"]);
+  if (groupId) practitionerData.group_id = groupId;
+  if (groupLabel) practitionerData.group = groupLabel;
+  if (ecdcFkId) practitionerData.ecdc_id = ecdcFkId;
+  if (status) practitionerData.status = status;
+
+  if (practitioner) {
+    const { error } = await db.from("practitioners").update(practitionerData).eq("id", practitioner.id);
+    if (error) warnings.push(`Practitioner update failed for "${name}": ${error.message}`);
+    return practitioner.id;
+  }
+
+  const { data: newPractitioner, error } = await db.from("practitioners").insert(practitionerData).select("id").single();
+  if (error) {
+    warnings.push(`Practitioner insert failed for "${name}": ${error.message}`);
+    return null;
+  }
+
+  return newPractitioner.id;
 }
-async function handleTrainingSync(payload, practitionerId, warnings) {
+
+async function handleTrainingSync(
+  db: SupabaseClientLike,
+  payload: Payload,
+  practitionerId: string | null,
+  warnings: Warnings,
+) {
   if (!practitionerId) return;
-  if (!payload["mapping/training_yn"]) return;
-  const prevTraining = parseMultiSelect(payload["mapping/training_prev"]);
+  if (!payload["mapping/training_yn"] && !payload.training_yn) return;
+
+  const prevTraining = parseMultiSelect(payload["mapping/training_prev"] ?? payload.training_prev);
+  // The current XLSForm only offers firstaid, level4, level5, and other.
+  // Do not erase legacy training flags that this form cannot represent.
   const trainingData = {
     id: practitionerId,
-    smart_start_ever: prevTraining.includes("smartstart"),
     first_aid_ever: prevTraining.includes("firstaid"),
     level4_ever: prevTraining.includes("level4"),
     level5_ever: prevTraining.includes("level5"),
-    wordworks03_ever: prevTraining.includes("ww03"),
-    wordworks35_ever: prevTraining.includes("ww35"),
-    littlestars_ever: prevTraining.includes("littlestars"),
-    other: payload["mapping/training_prev_other"] || null
+    other: payload["mapping/training_prev_other"] || payload.training_prev_other || null,
   };
-  const { data: existing } = await supabase.from("training").select("id").eq("id", practitionerId).maybeSingle();
-  const { error } = await supabase.from("training").upsert(trainingData, {
-    onConflict: "id"
-  });
+
+  const { error } = await db.from("training").upsert(trainingData, { onConflict: "id" });
   if (error) warnings.push(`Training sync failed for practitioner ${practitionerId}: ${error.message}`);
 }
-/**
- * For support/caregiver/literacy visits, the Kobo payload should contain the
- * practitioner's Supabase UUID directly. If it doesn't match, we log to
- * kobo_unmatched so an admin can resolve the link later.
- */ async function lookupPractitionerOnly(payload, instanceId, warnings) {
-  const rawValue = payload.ecdc_practitioner;
-  if (!rawValue || rawValue === "none" || rawValue === "not_found") {
+
+async function lookupPractitionerOnly(
+  db: SupabaseClientLike,
+  payload: Payload,
+  instanceId: string,
+  warnings: Warnings,
+) {
+  const rawValue = textValue(payload.ecdc_practitioner);
+  if (isMissingChoice(rawValue)) {
     warnings.push("No practitioner value provided for lookup-only visit");
-    await logUnmatched(instanceId, "ecdc_practitioner", rawValue ?? null, warnings);
+    await logUnmatched(db, instanceId, "ecdc_practitioner", rawValue || null, warnings);
     return null;
   }
-  // First: try UUID direct match (expected happy path)
-  const { data: byId } = await supabase.from("practitioners").select("id").eq("id", rawValue).maybeSingle();
-  if (byId) return byId.id;
-  // Second: fall back to name match (handles older submissions)
-  const { data: byName } = await supabase.from("practitioners").select("id, name").ilike("name", rawValue).maybeSingle();
+
+  const canonical = canonicalUuid(rawValue);
+  if (canonical) {
+    const practitioner = await findRecordByExternalKey(db, "practitioners", canonical, rawValue, warnings, "Practitioner");
+    if (practitioner) return practitioner.id;
+
+    warnings.push(`Practitioner identifier "${rawValue}" did not match any practitioner. Logged to kobo_unmatched.`);
+    await logUnmatched(db, instanceId, "ecdc_practitioner", rawValue, warnings);
+    return null;
+  }
+
+  const { data: byName } = await db.from("practitioners").select("id, name").ilike("name", rawValue).maybeSingle();
   if (byName) {
-    warnings.push(`Practitioner resolved by name fallback for value "${rawValue}" — consider updating Kobo form to use UUID`);
+    warnings.push(`Practitioner resolved by name fallback for value "${rawValue}" - consider updating Kobo form to use UUID`);
     return byName.id;
   }
-  // Third: check for near-matches to help admin resolve
-  const { data: similar } = await supabase.rpc("find_similar_practitioners", {
-    search_name: rawValue
-  });
-  const similarNames = similar && similar.length > 0 ? similar.map((s)=>s.name).join(", ") : "none";
+
+  const { data: similar } = await db.rpc("find_similar_practitioners", { search_name: rawValue });
+  const similarNames = similar && similar.length > 0
+    ? similar.map((s: { name: string }) => s.name).join(", ")
+    : "none";
+
   warnings.push(`Practitioner "${rawValue}" not found. Similar: [${similarNames}]. Logged to kobo_unmatched.`);
-  await logUnmatched(instanceId, "ecdc_practitioner", rawValue, warnings);
+  await logUnmatched(db, instanceId, "ecdc_practitioner", rawValue, warnings);
   return null;
 }
+
+async function loadResolutionDecision(
+  db: SupabaseClientLike,
+  instanceId: string,
+  warnings: Warnings,
+): Promise<ResolutionDecision | null> {
+  const { data, error } = await db
+    .from("kobo_resolution_ledger")
+    .select("canonical_ecdc_id, canonical_practitioner_ids, responsible_staff_user_id, reason_code, decision")
+    .eq("source_identity", instanceId)
+    .maybeSingle();
+  if (error) {
+    warnings.push(`Resolution-ledger lookup failed: ${error.message}`);
+    return null;
+  }
+  return data as ResolutionDecision | null;
+}
+
+async function syncVisitParticipants(
+  db: SupabaseClientLike,
+  visitId: string,
+  primaryPractitionerId: string | null,
+  practitionerIds: string[],
+  warnings: Warnings,
+) {
+  if (practitionerIds.length === 0) return;
+  const rows = practitionerIds.map((practitionerId) => ({
+    visit_id: visitId,
+    practitioner_id: practitionerId,
+    participation_role: practitionerId === primaryPractitionerId ? "primary" : "additional",
+  }));
+  const { error } = await db
+    .from("outreach_visit_practitioners")
+    .upsert(rows, { onConflict: "visit_id,practitioner_id" });
+  if (error) warnings.push(`Visit participant sync failed: ${error.message}`);
+}
+
+async function syncVisitSource(
+  db: SupabaseClientLike,
+  visitId: string,
+  instanceId: string,
+  warnings: Warnings,
+) {
+  const { error } = await db.from("outreach_visit_sources").upsert({
+    visit_id: visitId,
+    source_system: "kobo",
+    external_id: instanceId,
+    original_visit_id: visitId,
+  }, { onConflict: "source_system,external_id" });
+  if (error) warnings.push(`Visit source-lineage sync failed: ${error.message}`);
+}
+
+async function syncVisitAttachment(
+  db: SupabaseClientLike,
+  visitId: string,
+  instanceId: string,
+  payload: Payload,
+  warnings: Warnings,
+) {
+  const filename = firstText(payload, ["mapping/photo_site"]);
+  if (!filename) return 0;
+
+  const { error } = await db.from("outreach_attachments").upsert({
+    visit_id: visitId,
+    source_system: "kobo",
+    source_instance_id: instanceId,
+    source_field: "mapping/photo_site",
+    source_filename: filename,
+  }, { onConflict: "source_system,source_instance_id,source_field,source_filename" });
+  if (error) {
+    warnings.push(`Attachment reference sync failed: ${error.message}`);
+    return 0;
+  }
+  return 1;
+}
+
+/* =========================================================================
+   HELPERS: IDENTIFIERS + FIELD MAPPING
+   ========================================================================= */
+
+function textValue(value: unknown) {
+  return value === null || value === undefined ? "" : String(value).trim();
+}
+
+function firstText(payload: Payload, keys: string[]) {
+  for (const key of keys) {
+    const value = textValue(payload[key]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function isMissingChoice(value: unknown) {
+  return MISSING_CHOICE_VALUES.has(textValue(value).toLowerCase());
+}
+
+function canonicalUuid(value: unknown) {
+  const raw = textValue(value).replace(/^uuid:/i, "");
+  if (DASHED_UUID_RE.test(raw)) return raw.toLowerCase();
+  if (!COMPACT_HEX_RE.test(raw)) return null;
+
+  return [
+    raw.slice(0, 8),
+    raw.slice(8, 12),
+    raw.slice(12, 16),
+    raw.slice(16, 20),
+    raw.slice(20),
+  ].join("-").toLowerCase();
+}
+
+function looksLikeIdentifier(value: unknown) {
+  const raw = textValue(value).replace(/^uuid:/i, "");
+  return DASHED_UUID_RE.test(raw) || COMPACT_HEX_RE.test(raw);
+}
+
+async function findRecordByExternalKey(
+  db: SupabaseClientLike,
+  table: "ecdc_list" | "practitioners",
+  canonical: string,
+  rawValue: string,
+  warnings: Warnings,
+  label: string,
+): Promise<{ id: string; name: string | null } | null> {
+  const { data: byCanonical, error: canonicalError } = await db
+    .from(table)
+    .select("id, name")
+    .eq("id", canonical)
+    .maybeSingle();
+
+  if (canonicalError) warnings.push(`${label} UUID lookup failed: ${canonicalError.message}`);
+  if (byCanonical) return byCanonical as { id: string; name: string | null };
+
+  const raw = textValue(rawValue).replace(/^uuid:/i, "").toLowerCase();
+  if (!COMPACT_HEX_RE.test(raw)) return null;
+
+  const rpcName = table === "practitioners" ? "resolve_practitioner_external_id" : "resolve_ecdc_external_id";
+  const { data: byExternalKey, error: rpcError } = await db.rpc(rpcName, { raw_value: raw }).maybeSingle();
+  if (byExternalKey) return byExternalKey as { id: string; name: string | null };
+  if (rpcError && rpcError.code !== "PGRST202") {
+    warnings.push(`${label} external-key lookup failed: ${rpcError.message}`);
+  }
+  return null;
+}
+
+function assignIfPresent(target: Record<string, unknown>, targetKey: string, payload: Payload, sourceKeys: string[]) {
+  for (const key of sourceKeys) {
+    if (payload[key] !== undefined && payload[key] !== null && payload[key] !== "") {
+      target[targetKey] = payload[key];
+      return;
+    }
+  }
+}
+
+function assignBooleanIfPresent(target: Record<string, unknown>, targetKey: string, payload: Payload, sourceKeys: string[]) {
+  for (const key of sourceKeys) {
+    if (payload[key] !== undefined && payload[key] !== null && payload[key] !== "") {
+      target[targetKey] = payload[key] === "yes" || payload[key] === true;
+      return;
+    }
+  }
+}
+
+function assignPhoneIfPresent(
+  target: Record<string, unknown>,
+  targetKey: string,
+  payload: Payload,
+  sourceKeys: string[],
+  warnings: Warnings,
+) {
+  const phone = firstText(payload, sourceKeys);
+  if (!phone) return;
+  if (!/^\d{10}$/.test(phone)) {
+    warnings.push(`${sourceKeys[0]} must contain exactly 10 digits - canonical record not updated`);
+    return;
+  }
+  target[targetKey] = phone;
+}
+
+function parseGeopoint(payload: Payload, warnings: Warnings): Geopoint | null {
+  const location = firstText(payload, ["mapping/location", "location"]);
+  if (!location) return null;
+
+  const coords = location.trim().split(/\s+/);
+  if (coords.length < 2) {
+    warnings.push(`ECDC location coords malformed: "${location}"`);
+    return null;
+  }
+
+  const latitude = safeFloat(coords[0]);
+  const longitude = safeFloat(coords[1]);
+  if (
+    latitude === null || longitude === null ||
+    latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+  ) {
+    warnings.push(`ECDC location coords malformed: "${location}"`);
+    return null;
+  }
+
+  const altitude = safeFloat(coords[2]);
+  const rawAccuracy = safeFloat(coords[3]);
+  const accuracy = rawAccuracy !== null && rawAccuracy >= 0 ? rawAccuracy : null;
+  if (rawAccuracy !== null && rawAccuracy < 0) {
+    warnings.push(`ECDC location accuracy was negative (${rawAccuracy}) - stored as null`);
+  }
+
+  return { latitude, longitude, altitude, accuracy };
+}
+
 /* =========================================================================
    HELPERS: UNMATCHED + STATUS LOGGING
-   ========================================================================= */ async function logUnmatched(instanceId, field, rawValue, warnings) {
-  const { error } = await supabase.from("kobo_unmatched").insert({
-    instance_id: instanceId,
-    field,
-    raw_value: rawValue
+   ========================================================================= */
+
+async function logUnmatched(
+  db: SupabaseClientLike,
+  instanceId: string | null,
+  field: string,
+  rawValue: unknown,
+  warnings: Warnings,
+) {
+  if (!instanceId) {
+    warnings.push(`Could not log unmatched ${field}: missing instance_id`);
+    return;
+  }
+
+  const { error } = await db.rpc("record_kobo_unmatched", {
+    p_instance_id: instanceId,
+    p_field: field,
+    p_raw_value: rawValue === null || rawValue === undefined ? null : String(rawValue),
   });
+
   if (error) warnings.push(`Failed to log unmatched record: ${error.message}`);
 }
-export async function markProcessed(instanceId, status, errorMessage, warnings) {
+
+export async function markProcessed(
+  instanceId: string,
+  status: string,
+  errorMessage?: string,
+  warnings?: string[],
+) {
   await supabase.from("kobo_processed").upsert({
     instance_id: instanceId,
     status,
     error_message: errorMessage ?? null,
-    warnings: warnings && warnings.length > 0 ? warnings : null,
-    processed_at: new Date().toISOString()
+    warnings: warnings && warnings.length > 0 ? warnings.join("\n") : null,
+    warning_details: warnings && warnings.length > 0 ? warnings : null,
+    processor_version: PROCESSOR_VERSION,
+    processed_at: new Date().toISOString(),
   }, {
-    onConflict: "instance_id"
+    onConflict: "instance_id",
   });
 }
+
+export const __testing = {
+  canonicalUuid,
+  isMissingChoice,
+  looksLikeIdentifier,
+  parseMultiSelect,
+  parseGeopoint,
+  safeInt,
+  safePositiveNumeric,
+  safeTimestamp,
+  yesNoBoolean,
+};

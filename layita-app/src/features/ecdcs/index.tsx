@@ -1,6 +1,7 @@
 // src/features/ecdcMap/index.tsx
 
 import { useMemo, useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MapContainer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -13,7 +14,7 @@ import { useLandmarks } from './api/useLandmarks';
 import { useDeleteEcdc } from './api/useDeleteEcdc';
 import { useGlobalVisitStats } from '../practitioners/api/usePractitioners';
 
-import Sidebar from '../../layouts/Sidebar';
+import { useAppShellFooter } from '../../layouts/AppShell';
 import {
   VISIT_PRESETS,
   fmtDate,
@@ -29,6 +30,7 @@ import {
   CloseIcon,
 } from './_components';
 import { AdminSoftDeleteButton } from '../layita/components/AdminSoftDeleteButton';
+import { useAuth } from '../auth/useAuth';
 
 import '../../styles/shared.css';
 import '../../styles/ecdcMap.css';
@@ -38,6 +40,8 @@ import { exportReportAsPDF, exportReportAsExcel } from './exportUtils';
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ECDCMap() {
+  const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [selected,        setSelected]        = useState<EcdcWithPractitioners | null>(null);
   const [search,          setSearch]          = useState('');
   const [filtersOpen,     setFiltersOpen]     = useState(false);
@@ -47,6 +51,7 @@ export default function ECDCMap() {
   const [listVisible,     setListVisible]     = useState(false);
   const [visitFilterOpen, setVisitFilterOpen] = useState(false);
   const [visitPreset,     setVisitPreset]     = useState<string | null>(null);
+  const [tableOpen,       setTableOpen]       = useState(false);
 
   // ── Multi-select state ───────────────────────────────────────────────────────
   const [selectMode,      setSelectMode]      = useState(false);
@@ -68,7 +73,7 @@ export default function ECDCMap() {
     if (!globalVisits.length) return null;
     const map = new Map<string, string>();
     for (const v of globalVisits) {
-      if (!map.has(v.practitioner_id)) map.set(v.practitioner_id, v.date);
+      if (v.practitioner_id && v.date && !map.has(v.practitioner_id)) map.set(v.practitioner_id, v.date);
     }
     return map;
   }, [globalVisits]);
@@ -118,6 +123,8 @@ export default function ECDCMap() {
         !q ||
         e.name?.toLowerCase().includes(q) ||
         e.area?.toLowerCase().includes(q) ||
+        e.chief?.toLowerCase().includes(q) ||
+        e.headman?.toLowerCase().includes(q) ||
         e.practitioners?.some(
           (p) => p.name?.toLowerCase().includes(q) || p.group?.group_name?.toLowerCase().includes(q)
         );
@@ -207,11 +214,6 @@ export default function ECDCMap() {
     return TRAINING_FILTERS.filter((f) => training[f.key] === true).map((f) => f.label);
   };
 
-  const getMissingTrainingTags = (training: Record<string, boolean> | null) => {
-    if (!training) return TRAINING_FILTERS.map((f) => f.label);
-    return TRAINING_FILTERS.filter((f) => training[f.key] !== true).map((f) => f.label);
-  };
-
   const handleViewPractitioners = () => {
     const pracIds = selectedEcdcs
       .flatMap(e => e.practitioners?.map(p => p.id) || [])
@@ -227,7 +229,7 @@ export default function ECDCMap() {
   };
 
   // ── Sidebar legend footer ────────────────────────────────────────────────────
-  const legendFooter = legendGroups.length > 0 ? (
+  const legendFooter = useMemo(() => legendGroups.length > 0 ? (
     <>
       <div className="ecdc-legend__heading">Groups</div>
       <div className="ecdc-legend__items">
@@ -242,12 +244,12 @@ export default function ECDCMap() {
         })}
       </div>
     </>
-  ) : null;
+  ) : null, [legendGroups]);
+  useAppShellFooter(legendFooter);
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="page">
-      <Sidebar footer={legendFooter} />
 
       <div className="ecdc-map-area">
 
@@ -277,9 +279,10 @@ export default function ECDCMap() {
             opacity={1.0}
           />
 
-          <FlyToSelected location={selected} />
+          <FlyToSelected location={selected?.latitude == null || selected.longitude == null ? null : { latitude: selected.latitude, longitude: selected.longitude }} />
 
           {filtered.map((ecdc) => {
+            if (ecdc.latitude === null || ecdc.longitude === null) return null;
             const groupName  = dominantGroupName(ecdc.practitioners);
             const isSelected = selectMode ? selectedIds.has(ecdc.id) : selected?.id === ecdc.id;
             return (
@@ -316,11 +319,13 @@ export default function ECDCMap() {
             </MapMarker>
           ))}
         </MapContainer>
+        {tableOpen && <section className="ecdc-table-view" role="dialog" aria-modal="true" aria-labelledby="ecdc-table-title"><header><div><h2 id="ecdc-table-title">ECDC directory table</h2><p>{filtered.length} centres · select a row to return to its map detail</p></div><button className="lyt-btn" onClick={() => setTableOpen(false)}>Back to map</button></header><div><table><thead><tr><th>ECDC</th><th>Area</th><th>Chief</th><th>Headman</th><th>Practitioners</th><th>Coordinates</th></tr></thead><tbody>{filtered.map((ecdc) => <tr key={ecdc.id} tabIndex={0} onClick={() => { setSelected(ecdc); setTableOpen(false); }} onKeyDown={(event) => { if (event.key === 'Enter') { setSelected(ecdc); setTableOpen(false); } }}><td data-label="ECDC">{ecdc.name || 'Unnamed centre'}</td><td data-label="Area">{ecdc.area || '—'}</td><td data-label="Chief">{ecdc.chief || '—'}</td><td data-label="Headman">{ecdc.headman || '—'}</td><td data-label="Practitioners">{ecdc.practitioners.length}</td><td data-label="Coordinates">{ecdc.latitude == null || ecdc.longitude == null ? 'Missing' : 'Available'}</td></tr>)}</tbody></table></div></section>}
 
         {/* ── Floating panel ── */}
         <div className="ecdc-panel">
           <div className="ecdc-panel__header">
             <h2>ECDC Directory</h2>
+            <button className="ecdc-select-toggle" onClick={() => setTableOpen(true)}>Table</button>
             <button
               className={`ecdc-select-toggle${selectMode ? ' ecdc-select-toggle--active' : ''}`}
               onClick={toggleSelectMode}
@@ -527,6 +532,15 @@ export default function ECDCMap() {
               >
                 View Practitioners
               </button>
+              {isAdmin && (
+                <button
+                  className="ecdc-select-toolbar__btn"
+                  onClick={() => navigate(`/outreach-planning?ecdcs=${Array.from(selectedIds).join(',')}`)}
+                  title="Create planned outreach for selected centres"
+                >
+                  Add to Planned Outreach
+                </button>
+              )}
               <button
                 className="ecdc-select-toolbar__btn"
                 onClick={() => setReportOpen(true)}
@@ -576,6 +590,7 @@ export default function ECDCMap() {
                       <div className="ecdc-item__name">{ecdc.name || 'Unnamed Centre'}</div>
                     </div>
                     {ecdc.area && <div className="ecdc-item__area">{ecdc.area}</div>}
+                    {(ecdc.chief || ecdc.headman) && <div className="ecdc-item__area">{ecdc.chief ? `Chief: ${ecdc.chief}` : ''}{ecdc.chief && ecdc.headman ? ' · ' : ''}{ecdc.headman ? `Headman: ${ecdc.headman}` : ''}</div>}
                     {ecdc.practitioners?.length > 0 && (
                       <span className="ecdc-item__badge">
                         {ecdc.practitioners.length} practitioner{ecdc.practitioners.length !== 1 ? 's' : ''}

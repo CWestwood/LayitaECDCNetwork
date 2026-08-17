@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../auth/supabaseClient';
+import { useQueryClient } from '@tanstack/react-query';
 import { Practitioner } from './types';
 import { Icon, Icons } from './_components';
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
+import { fetchPractitionerEditOptions, savePractitionerEdits } from './api/practitionerEdit';
 
 interface Group {
   id: string;
@@ -20,18 +21,33 @@ interface Props {
   onSaved?: () => void;
 }
 
+function dateKeyForTraining(key: string) {
+  return key.endsWith('_ever') ? key.replace(/_ever$/, '_date') : `${key}_date`;
+}
+
+function trainingDatePayload(dates: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(dates).map(([key, value]) => [dateKeyForTraining(key), value || null]),
+  );
+}
+
 export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const [groups, setGroups] = useState<Group[]>([]);
   const [ecdcs, setEcdcs] = useState<ECDC[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
 
+  const initialGroupId = p.group?.id || '';
+  const initialEcdcId = p.ecdc?.id || '';
+
   const [form, setForm] = useState({
     name: p.name || '',
-    group_id: (p as any).group_id || (p.group as any)?.id || '',
-    ecdc_id: (p as any).ecdc_id || (p.ecdc as any)?.id || '',
+    group_id: initialGroupId,
+    ecdc_id: initialEcdcId,
     contact_number1: p.contact_number1 || '',
     contact_number2: p.contact_number2 || '',
     has_whatsapp: p.has_whatsapp || false,
@@ -47,24 +63,25 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
     return init;
   });
 
+  const [trainingDates, setTrainingDates] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    TRAINING_FILTERS.forEach((f) => {
+      init[f.key] = String(p.training?.[dateKeyForTraining(f.key)] || '');
+    });
+    return init;
+  });
+
   useEffect(() => {
     async function fetchOptions() {
-      const [grpRes, ecdcRes] = await Promise.all([
-        supabase.from('groups').select('id, group_name').order('group_name'),
-        supabase.from('ecdc_list').select('id, name').order('name'),
-      ]);
-
-      const loadedGroups = grpRes.data || [];
-      const loadedEcdcs = ecdcRes.data || [];
+      const { groups: loadedGroups, ecdcs: loadedEcdcs } = await fetchPractitionerEditOptions();
 
       setGroups(loadedGroups);
       setEcdcs(loadedEcdcs);
 
-      // Resolve IDs from the nested objects if they were missing on the initial load
       setForm((prev) => ({
         ...prev,
-        group_id: prev.group_id || loadedGroups.find((g) => g.group_name === (p as any).group?.group_name)?.id || '',
-        ecdc_id: prev.ecdc_id || loadedEcdcs.find((e) => e.name === (p as any).ecdc?.name)?.id || '',
+        group_id: prev.group_id || loadedGroups.find((g) => g.group_name === p.group?.group_name)?.id || '',
+        ecdc_id: prev.ecdc_id || loadedEcdcs.find((e) => e.name === p.ecdc?.name)?.id || '',
       }));
 
       setOptionsLoading(false);
@@ -72,19 +89,52 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
     fetchOptions();
   }, [p]);
 
-  const set = (field: keyof typeof form, value: string | boolean) =>
+  const set = (field: keyof typeof form, value: string | boolean) => {
+    setConfirming(false);
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
 
-  const setTraining = (key: string, value: boolean) =>
+  const setTraining = (key: string, value: boolean) => {
+    setConfirming(false);
     setTrainingForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const setTrainingDate = (key: string, value: string) => {
+    setConfirming(false);
+    setTrainingDates((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const changedFields = () => {
+    const changes: string[] = [];
+    if (form.name !== (p.name || '')) changes.push('Name');
+    if (form.group_id !== initialGroupId) changes.push('Group');
+    if (form.ecdc_id !== initialEcdcId) changes.push('ECDC');
+    if (form.contact_number1 !== (p.contact_number1 || '')) changes.push('Primary contact');
+    if (form.contact_number2 !== (p.contact_number2 || '')) changes.push('Secondary contact');
+    if (form.has_whatsapp !== !!p.has_whatsapp) changes.push('WhatsApp');
+    if (form.dsd_funded !== !!p.dsd_funded) changes.push('DSD funded');
+    if (form.dsd_registered !== !!p.dsd_registered) changes.push('DSD registered');
+
+    TRAINING_FILTERS.forEach((f) => {
+      if (trainingForm[f.key] !== !!p.training?.[f.key]) changes.push(`${f.label} training`);
+      const existingDate = String(p.training?.[dateKeyForTraining(f.key)] || '');
+      if (trainingDates[f.key] !== existingDate) changes.push(`${f.label} date`);
+    });
+
+    return changes;
+  };
 
   const handleSave = async () => {
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
-    const { error: saveError, count } = await supabase
-      .from('practitioners')
-      .update({
+    try {
+      await savePractitionerEdits(p.id, {
         name: form.name || null,
         group_id: form.group_id || null,
         ecdc_id: form.ecdc_id || null,
@@ -93,34 +143,23 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
         has_whatsapp: form.has_whatsapp,
         dsd_funded: form.dsd_funded,
         dsd_registered: form.dsd_registered,
-      }, { count: 'exact' })
-      .eq('id', p.id);
-
-    setSaving(false);
-
-    if (saveError) { 
-      setError(saveError.message); 
-      return; 
-    }
-
-    if (count === 0) { 
-      setError('Permission denied — only administrators can edit practitioners.'); 
-      return; 
-    }
-
-    const { error: trainingError } = await supabase
-      .from('training')
-      .upsert({
-        id: p.id,
-        ...trainingForm
+      }, {
+        ...trainingForm,
+        ...trainingDatePayload(trainingDates),
       });
-
-    if (trainingError) {
-      setError(`Failed to save training data: ${trainingError.message}`);
+    } catch (saveError) {
       setSaving(false);
+      setError(saveError instanceof Error ? saveError.message : 'Practitioner could not be saved.');
       return;
     }
 
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['practitioners'] }),
+      queryClient.invalidateQueries({ queryKey: ['visits', 'global-stats'] }),
+      queryClient.invalidateQueries({ queryKey: ['ecdcs', 'with-practitioners'] }),
+    ]);
+
+    setSaving(false);
     onSaved?.();
     onDone();
   };
@@ -128,10 +167,12 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
   if (optionsLoading) {
     return (
       <div className="p2-detail p2-detail--empty">
-        <div className="p2-loading"><div className="p2-spinner" /> Loading options…</div>
+        <div className="p2-loading"><div className="p2-spinner" /> Loading options...</div>
       </div>
     );
   }
+
+  const changes = changedFields();
 
   return (
     <div className="p2-detail p2-edit-container">
@@ -145,57 +186,33 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
       <div className="p2-edit-body">
         <div className="p2-edit-field">
           <label className="p2-edit-label">Name</label>
-          <input
-            className="p2-edit-input"
-            value={form.name}
-            onChange={(e) => set('name', e.target.value)}
-          />
+          <input className="p2-edit-input" value={form.name} onChange={(e) => set('name', e.target.value)} />
         </div>
 
         <div className="p2-edit-field">
           <label className="p2-edit-label">Group</label>
-          <select
-            className="p2-edit-select"
-            value={form.group_id}
-            onChange={(e) => set('group_id', e.target.value)}
-          >
-            <option value="">— Select —</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.group_name}</option>
-            ))}
+          <select className="p2-edit-select" value={form.group_id} onChange={(e) => set('group_id', e.target.value)}>
+            <option value="">- Select -</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.group_name}</option>)}
           </select>
         </div>
 
         <div className="p2-edit-field">
           <label className="p2-edit-label">ECDC</label>
-          <select
-            className="p2-edit-select"
-            value={form.ecdc_id}
-            onChange={(e) => set('ecdc_id', e.target.value)}
-          >
-            <option value="">— Select —</option>
-            {ecdcs.map((e) => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
+          <select className="p2-edit-select" value={form.ecdc_id} onChange={(e) => set('ecdc_id', e.target.value)}>
+            <option value="">- Select -</option>
+            {ecdcs.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
         </div>
 
         <div className="p2-edit-grid">
           <div className="p2-edit-field">
             <label className="p2-edit-label">Primary Contact</label>
-            <input
-              className="p2-edit-input"
-              value={form.contact_number1}
-              onChange={(e) => set('contact_number1', e.target.value)}
-            />
+            <input className="p2-edit-input" value={form.contact_number1} onChange={(e) => set('contact_number1', e.target.value)} />
           </div>
           <div className="p2-edit-field">
             <label className="p2-edit-label">Secondary Contact</label>
-            <input
-              className="p2-edit-input"
-              value={form.contact_number2}
-              onChange={(e) => set('contact_number2', e.target.value)}
-            />
+            <input className="p2-edit-input" value={form.contact_number2} onChange={(e) => set('contact_number2', e.target.value)} />
           </div>
         </div>
 
@@ -216,27 +233,44 @@ export default function PractitionerEditForm({ p, onDone, onSaved }: Props) {
         </div>
 
         <div className="p2-edit-section-heading">Training</div>
-        <div className="p2-edit-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+        <div className="p2-edit-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
           {TRAINING_FILTERS.map((f) => (
-            <label key={f.key} className="p2-edit-checkbox-label">
-              <input 
-                type="checkbox" 
-                checked={trainingForm[f.key]} 
-                onChange={(e) => setTraining(f.key, e.target.checked)} 
+            <div key={f.key} className="p2-edit-field">
+              <label className="p2-edit-checkbox-label">
+                <input type="checkbox" checked={trainingForm[f.key]} onChange={(e) => setTraining(f.key, e.target.checked)} />
+                {f.label}
+              </label>
+              <input
+                className="p2-edit-input"
+                type="date"
+                value={trainingDates[f.key]}
+                onChange={(e) => setTrainingDate(f.key, e.target.value)}
+                disabled={!trainingForm[f.key]}
               />
-              {f.label}
-            </label>
+            </div>
           ))}
         </div>
 
         {error && <div className="p2-edit-error">{error}</div>}
 
+        {confirming && (
+          <div className="p2-edit-confirm">
+            <strong>Confirm changes</strong>
+            <span>{changes.length > 0 ? changes.join(', ') : 'No visible field changes detected.'}</span>
+          </div>
+        )}
+
         <div className="p2-edit-footer">
           <button className="p2-edit-btn p2-edit-btn--ghost" onClick={onDone} disabled={saving}>
             Cancel
           </button>
+          {confirming && (
+            <button className="p2-edit-btn p2-edit-btn--ghost" onClick={() => setConfirming(false)} disabled={saving}>
+              Review
+            </button>
+          )}
           <button className="p2-edit-btn p2-edit-btn--primary" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
+            {saving ? 'Saving...' : confirming ? 'Confirm' : 'Save changes'}
           </button>
         </div>
       </div>

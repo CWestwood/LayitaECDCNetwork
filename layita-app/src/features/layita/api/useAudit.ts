@@ -18,6 +18,42 @@ interface UseAuditLogsParams {
   tableName: string;
 }
 
+type AuditViewRow = {
+  id: string | null;
+  table_name: string | null;
+  record_id: string | null;
+  record_name: string | null;
+  field_name: string | null;
+  old_val: string | null;
+  new_val: string | null;
+  changed_by_name: string | null;
+  changed_at: string | null;
+};
+
+function normalizeAuditRows(rows: AuditViewRow[]): AuditRow[] {
+  return rows
+    .filter((row) => row.id && row.table_name && row.record_id && row.field_name && row.changed_at)
+    .map((row) => ({
+      ...row,
+      id: row.id as string,
+      table_name: row.table_name as string,
+      record_id: row.record_id as string,
+      field_name: row.field_name as string,
+      changed_at: row.changed_at as string,
+    }));
+}
+
+export async function fetchAllAuditLogs(): Promise<AuditRow[]> {
+  const { data, error } = await supabase
+    .from('human_audit_logs')
+    .select('id, table_name, record_id, record_name, field_name, old_val, new_val, changed_by_name, changed_at')
+    .order('changed_at', { ascending: false })
+    .limit(1000);
+
+  if (error) throw new Error(error.message);
+  return normalizeAuditRows(data ?? []);
+}
+
 export const useAuditLogs = ({ recordId, tableName }: UseAuditLogsParams) => {
   return useQuery<AuditRow[]>({
     queryKey: ['audit_logs', tableName, recordId],
@@ -30,7 +66,7 @@ export const useAuditLogs = ({ recordId, tableName }: UseAuditLogsParams) => {
         .order('changed_at', { ascending: false });
 
       if (error) throw error;
-      return data ?? [];
+      return normalizeAuditRows(data ?? []);
     },
     enabled: !!recordId && !!tableName,
   });
@@ -39,15 +75,6 @@ export const useAuditLogs = ({ recordId, tableName }: UseAuditLogsParams) => {
 export const useAllAuditLogs = () => {
   return useQuery<AuditRow[]>({
     queryKey: ['audit_logs_all'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('human_audit_logs')
-        .select('id, table_name, record_id, record_name, field_name, old_val, new_val, changed_by_name, changed_at')
-        .order('changed_at', { ascending: false })
-        .limit(1000); // Load up to 1000 of the most recent events
-
-      if (error) throw error;
-      return data ?? [];
-    }
+    queryFn: fetchAllAuditLogs,
   });
 };

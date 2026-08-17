@@ -11,6 +11,7 @@
   width: 100%;
   background-color: var(--color-bg-subtle);
   overflow: hidden;
+  font-family: 'Raleway', sans-serif;
 }
 
 .da-main {
@@ -134,9 +135,29 @@
 /* ── Chart Row / Type Bars ─────────────────────────────────────────────────── */
 
 .da-chart-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
+}
+
+.da-year-control {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.da-year-control select {
+  min-height: 34px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
 }
 
 .da-type-bar {
@@ -148,7 +169,7 @@
   border-radius: 8px;
   border: 1px solid var(--color-border);
   min-width: 180px;
-  flex: 1;
+  min-height: 64px;
 }
 
 .da-type-bar__label {
@@ -163,6 +184,61 @@
   font-family: 'Raleway', sans-serif;
   font-size: 1.1rem;
   font-weight: 700;
+  color: var(--color-primary-deep);
+}
+
+.da-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.da-staff-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.da-staff-table th,
+.da-staff-table td {
+  padding: 11px 12px;
+  border-top: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  font-family: 'Raleway', sans-serif;
+}
+
+.da-staff-table th {
+  color: var(--color-text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.da-staff-table td {
+  color: var(--color-text);
+  font-size: 0.82rem;
+}
+
+.da-type-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.da-type-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+}
+
+.da-type-chip strong {
   color: var(--color-primary-deep);
 }
 
@@ -325,3 +401,4 @@
     font-size: 1.5rem;
   }
 }
+.da-stat-card,.da-type-bar{text-decoration:none;color:inherit}.da-stat-card:focus-visible,.da-type-bar:focus-visible{outline:3px solid var(--color-secondary);outline-offset:2px}

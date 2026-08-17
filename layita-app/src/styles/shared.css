@@ -3,16 +3,19 @@
    Requires layita_colors CSS variables to be defined upstream.
 ───────────────────────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap');
 
 @import './layita_colors.css';
 
 /* ── Reset ── */
 *, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: 'Raleway', sans-serif; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+:focus-visible { outline: 3px solid var(--color-secondary); outline-offset: 2px; }
+.sidebar__more-mobile,.sidebar__mobile-menu{display:none}
 
 /* ── Page shell ── */
-.page {
+.app-shell {
   display: flex;
   height: 100vh;
   width: 100vw;
@@ -255,6 +258,110 @@
   font-weight: 600;
 }
 
+.app-shell__content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.page {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: 'Raleway', sans-serif;
+}
+
+.app-shell__content .da-page,
+.app-shell__content .ecdc-map-area,
+.app-shell__content .visits-page,
+.app-shell__content .practitioners-page {
+  height: 100%;
+}
+
+.app-error {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: 'Raleway', sans-serif;
+}
+
+.app-error__card {
+  width: min(560px, 100%);
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-panel);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+}
+
+.app-error__card pre { white-space: pre-wrap; }
+
+.lyt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.lyt-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.lyt-btn--secondary {
+  color: var(--color-text-secondary);
+}
+
+.lyt-btn--danger,
+.lyt-btn--danger-outline {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.lyt-btn--danger {
+  background: var(--color-danger-bg);
+}
+
+.lyt-btn--danger-outline {
+  background: var(--color-background);
+}
+
+.lyt-btn--danger-outline:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+}
+
+.lyt-btn__text {
+  line-height: 1;
+}
+
+.lyt-btn--danger-outline .lyt-btn__text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    shared.mobile.css  –  Mobile & responsive overrides for shared.css
    Import AFTER shared.css.
@@ -326,11 +433,18 @@
 ══════════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   /* ── Page shell: vertical stack, bottom-nav layout ── */
-  .page {
+  .app-shell {
     flex-direction: column;
     height: 100dvh; /* dynamic viewport height for mobile browsers */
     overflow: hidden;
   }
+
+  .app-shell__content {
+    width: 100%;
+    height: auto;
+  }
+
+  .page { height: 100%; }
 
   /* ── Sidebar → Bottom nav bar ── */
   .sidebar {
@@ -378,6 +492,16 @@
     display: flex;
     align-items: stretch;
   }
+
+  .sidebar__nav li[data-mobile-primary="false"] {
+    display: none;
+  }
+  .sidebar__nav li.sidebar__more-mobile { display:flex; }
+  .sidebar__more-mobile button { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; padding:6px 4px; border:0; background:transparent; font:inherit; color:var(--color-text-secondary); }
+  .sidebar__mobile-menu { display:grid; position:fixed; left:10px; right:10px; bottom:68px; z-index:900; padding:10px; border:1px solid var(--color-border); border-radius:12px; background:var(--color-bg-panel); box-shadow:0 14px 35px rgba(0,0,0,.2); grid-template-columns:repeat(2,1fr); gap:5px; }
+  .sidebar__mobile-menu-head { grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; padding:5px 8px; }
+  .sidebar__mobile-menu-head button { min-width:40px; min-height:40px; border:0; background:transparent; font-size:1.4rem; }
+  .sidebar__mobile-menu>a { display:flex; align-items:center; gap:8px; min-height:44px; padding:9px; border-radius:7px; color:var(--color-text); text-decoration:none; }
 
   .sidebar__nav a {
     flex: 1;
@@ -434,6 +558,8 @@
     height: 16px;
   }
 }
+
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
