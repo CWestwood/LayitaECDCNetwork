@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { QueryState } from '../../../app/QueryState';
 import {
   EcdcOption,
   useDataQualitySummary,
@@ -278,9 +279,9 @@ function DuplicateVisitsPanel() {
 }
 
 export default function DataQualityPage() {
-  const { data: metrics = [], isLoading: metricsLoading } = useDataQualitySummary();
-  const { data: unmatched = [], isLoading: unmatchedLoading } = useUnmatchedRecords();
-  const { data: practitioners = [] } = usePractitionerOptions();
+  const { data: metrics = [], isLoading: metricsLoading, error: metricsError, refetch: refetchMetrics } = useDataQualitySummary();
+  const { data: unmatched = [], isLoading: unmatchedLoading, error: unmatchedError, refetch: refetchUnmatched } = useUnmatchedRecords();
+  const { data: practitioners = [], error: practitionersError, refetch: refetchPractitioners } = usePractitionerOptions();
   const resolveUnmatched = useResolveUnmatched();
   const [selectedPractitioners, setSelectedPractitioners] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
@@ -298,6 +299,13 @@ export default function DataQualityPage() {
 
   return (
     <>
+        {(metricsError || unmatchedError || practitionersError) && (
+          <QueryState
+            loading={false}
+            error={metricsError ?? unmatchedError ?? practitionersError}
+            onRetry={() => { void Promise.all([refetchMetrics(), refetchUnmatched(), refetchPractitioners()]); }}
+          />
+        )}
         <MergeRecordsPanel />
 
         <DuplicateVisitsPanel />
@@ -321,6 +329,8 @@ export default function DataQualityPage() {
 
           {unmatchedLoading ? (
             <div className="dq-empty">Loading unmatched records...</div>
+          ) : unmatchedError ? (
+            <QueryState loading={false} error={unmatchedError} onRetry={() => { void refetchUnmatched(); }} />
           ) : filteredUnmatched.length === 0 ? (
             <div className="dq-empty">No unresolved unmatched records.</div>
           ) : (

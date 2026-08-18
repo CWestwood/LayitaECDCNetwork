@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useAllAuditLogs, AuditRow } from "../api/useAudit";
 import "../../../styles/practitioners.css";
+import { QueryState } from "../../../app/QueryState";
 
 const FIELD_LABELS: Record<string, string> = {
   name:             "Name",
@@ -37,7 +38,7 @@ function groupRows(rows: AuditRow[]) {
 }
 
 export default function AuditLogs() {
-  const { data: rows = [], isLoading } = useAllAuditLogs();
+  const { data: rows = [], isLoading, error, refetch } = useAllAuditLogs();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupRows(rows), [rows]);
@@ -61,6 +62,8 @@ export default function AuditLogs() {
           <div style={{ maxWidth: "800px", margin: "0 auto", width: "100%" }}>
             {isLoading ? (
               <div className="p2-loading"><div className="p2-spinner" /> Loading activity…</div>
+            ) : error ? (
+              <QueryState loading={false} error={error} onRetry={() => { void refetch(); }} />
             ) : groups.length === 0 ? (
               <div className="p2-empty">No activity recorded yet.</div>
             ) : (

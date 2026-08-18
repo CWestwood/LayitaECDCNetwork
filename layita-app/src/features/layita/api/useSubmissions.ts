@@ -24,6 +24,16 @@ export interface KoboSubmissionRow {
   payload: Json | null;
 }
 
+export interface ClientErrorRow {
+  id: string;
+  created_at: string;
+  correlation_id: string;
+  event: string;
+  message: string;
+  route: string | null;
+  profile: { name: string | null } | null;
+}
+
 function scalarPayloadValue(payload: ReturnType<typeof asJsonObject>, ...paths: string[]): string | null {
   for (const path of paths) {
     const value = payload?.[path];
@@ -96,6 +106,22 @@ export const useSubmissions = () => {
     staleTime: 1000 * 60 * 2,
   });
 };
+
+export function useClientErrors() {
+  return useQuery<ClientErrorRow[]>({
+    queryKey: ['client-error-reports'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('client_error_reports')
+        .select('id, created_at, correlation_id, event, message, route, profile:profiles(name)')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+    staleTime: 1000 * 60,
+  });
+}
 
 export function useReprocessSubmission() {
   const queryClient = useQueryClient();

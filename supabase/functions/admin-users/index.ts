@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { operationalLog, requestCorrelationId } from "../_shared/operational-log.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,6 +18,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 Deno.serve(async (request) => {
+  const correlationId = requestCorrelationId(request);
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -55,6 +57,7 @@ Deno.serve(async (request) => {
   }
 
   const validRoles = new Set(["administrator", "manager", "datacapturer", "library"]);
+  operationalLog("info", "admin_users_request", correlationId, { action: body.action, actor_id: caller.user.id });
 
   if (body.action === "list") {
     const [{ data: authData, error: authError }, { data: profiles, error: profileError }, { data: staff, error: staffError }] = await Promise.all([

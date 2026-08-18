@@ -1,0 +1,2 @@
+-- Intentionally empty. Contract fixtures live in supabase/tests/database and
+-- run inside transactions so local resets remain representative and clean.

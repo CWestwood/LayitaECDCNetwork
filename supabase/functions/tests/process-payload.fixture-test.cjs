@@ -70,6 +70,7 @@ class FakeSupabase {
       kobo_unmatched: [],
       kobo_processed: [],
       kobo_resolution_ledger: [],
+      capture_submissions: [],
     };
   }
 
@@ -105,6 +106,87 @@ class FakeSupabase {
         raw_value: args.p_raw_value, occurrence_count: 1,
       });
       return thenable({ data: existing?.id ?? this.tables.kobo_unmatched.at(-1).id, error: null });
+    }
+
+    if (name === "submit_outreach_capture") {
+      const previous = this.tables.capture_submissions.find((row) => row.capture_id === args.p_capture_id);
+      const requestHash = JSON.stringify(args.p_payload);
+      if (previous) {
+        if (previous.request_hash !== requestHash) {
+          return thenable({ data: { success: false, code: "CAPTURE_ID_CONFLICT" }, error: null });
+        }
+        return thenable({ data: { ...previous.result, duplicate: true }, error: null });
+      }
+
+      const capture = args.p_payload;
+      let ecdcId = capture.ecdc?.id || null;
+      if (capture.ecdc) {
+        if (ecdcId) Object.assign(this.tables.ecdc_list.find((row) => row.id === ecdcId), capture.ecdc.values);
+        else if (capture.ecdc.values?.name) {
+          ecdcId = crypto.randomUUID();
+          this.tables.ecdc_list.push({ id: ecdcId, ...capture.ecdc.values });
+        }
+      }
+
+      let practitionerId = capture.practitioner?.id || capture.visit.practitioner_id || null;
+      if (capture.practitioner) {
+        const values = { ...capture.practitioner.values };
+        if (ecdcId) values.ecdc_id = ecdcId;
+        if (practitionerId) Object.assign(this.tables.practitioners.find((row) => row.id === practitionerId), values);
+        else if (values.name) {
+          practitionerId = crypto.randomUUID();
+          this.tables.practitioners.push({ id: practitionerId, ...values });
+        }
+        if (practitionerId && capture.practitioner.training) {
+          const training = this.tables.training.find((row) => row.id === practitionerId);
+          if (training) Object.assign(training, capture.practitioner.training);
+          else this.tables.training.push({ id: practitionerId, ...capture.practitioner.training });
+        }
+      }
+
+      const visit = {
+        ...capture.visit,
+        practitioner_id: practitionerId,
+        data_capturer_id: capture.staff_id,
+      };
+      const externalId = capture.external_id || args.p_capture_id;
+      let visitRow = this.tables.outreach_visits.find((row) => row.kobo_instance_id === externalId);
+      if (visitRow) Object.assign(visitRow, visit);
+      else {
+        visitRow = { id: crypto.randomUUID(), ...visit };
+        this.tables.outreach_visits.push(visitRow);
+      }
+
+      const participantIds = [...new Set([practitionerId, ...(capture.practitioner_ids || [])].filter(Boolean))];
+      this.tables.outreach_visit_practitioners = this.tables.outreach_visit_practitioners
+        .filter((row) => row.visit_id !== visitRow.id);
+      for (const id of participantIds) this.tables.outreach_visit_practitioners.push({
+        visit_id: visitRow.id,
+        practitioner_id: id,
+        participation_role: id === practitionerId ? "primary" : "additional",
+      });
+      const sourceRow = this.tables.outreach_visit_sources.find((row) =>
+        row.source_system === args.p_source && row.external_id === externalId
+      );
+      const source = { visit_id: visitRow.id, source_system: args.p_source, external_id: externalId };
+      if (sourceRow) Object.assign(sourceRow, source);
+      else this.tables.outreach_visit_sources.push(source);
+      for (const attachment of capture.attachments || []) {
+        const priorAttachment = this.tables.outreach_attachments.find((row) =>
+          row.source_system === args.p_source && row.source_instance_id === externalId &&
+          row.source_field === attachment.source_field && row.source_filename === attachment.source_filename
+        );
+        const nextAttachment = {
+          visit_id: visitRow.id, source_system: args.p_source, source_instance_id: externalId,
+          capture_id: args.p_capture_id, ...attachment,
+        };
+        if (priorAttachment) Object.assign(priorAttachment, nextAttachment);
+        else this.tables.outreach_attachments.push(nextAttachment);
+      }
+
+      const result = { success: true, duplicate: false, visit_id: visitRow.id, ecdc_id: ecdcId, practitioner_id: practitionerId };
+      this.tables.capture_submissions.push({ capture_id: args.p_capture_id, request_hash: requestHash, result });
+      return thenable({ data: result, error: null });
     }
 
     return thenable({ data: null, error: { code: "PGRST202", message: "RPC not found" } });

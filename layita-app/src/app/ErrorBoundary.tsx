@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import type { ErrorInfo, PropsWithChildren, ReactNode } from 'react';
+import { reportError } from '../lib/diagnostics';
 
 interface State {
   error: Error | null;
@@ -13,7 +14,7 @@ export class ErrorBoundary extends Component<PropsWithChildren, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('Unhandled application error', error, info);
+    reportError('unhandled_render_error', error, { componentStack: info.componentStack?.slice(0, 4000) });
   }
 
   render(): ReactNode {

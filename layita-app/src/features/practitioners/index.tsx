@@ -17,6 +17,7 @@ import {
   ListIcon,
 } from "./_components";
 import "../../styles/practitioners.css";
+import { QueryState } from "../../app/QueryState";
 
 // ─── ../lib ────────────────────────────────────────────────────────────────
 
@@ -52,8 +53,8 @@ export default function Practitioners() {
   const [hasProcessedUrl, setHasProcessedUrl] = useState(false);
 
   // ── Data ──────────────────────────────────────────────────────────────────
-  const { data: practitioners = [], isLoading: pracLoading  } = usePractitioners();
-  const { data: globalVisits  = [], isLoading: visitsLoading } = useGlobalVisitStats();
+  const { data: practitioners = [], isLoading: pracLoading, error: practitionersError, refetch: refetchPractitioners } = usePractitioners();
+  const { data: globalVisits = [], isLoading: visitsLoading, error: visitsError, refetch: refetchVisits } = useGlobalVisitStats();
 
   const loading = pracLoading || visitsLoading;
 
@@ -364,6 +365,8 @@ export default function Practitioners() {
                 <div className="p2-spinner" />
                 Loading practitioners…
               </div>
+            ) : practitionersError || visitsError ? (
+              <QueryState loading={false} error={practitionersError ?? visitsError} onRetry={() => { void Promise.all([refetchPractitioners(), refetchVisits()]); }} />
             ) : filtered.length === 0 ? (
               <div className="p2-empty">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none"

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { QueryState } from '../../../app/QueryState';
 import { formatDate } from '../../../lib/format';
 import {
   useDeletedPractitioners,
@@ -111,12 +112,13 @@ function ConfirmActions({
 }
 
 function DeletedPractitionersList() {
-  const { data = [], isLoading } = useDeletedPractitioners();
+  const { data = [], isLoading, error, refetch } = useDeletedPractitioners();
   const { mutate: hardDelete, isPending: hardPending } = useHardDeletePractitioner();
   const { mutate: restore, isPending: restorePending } = useRestorePractitioner();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   if (isLoading) return <div className="la-deleted__loading">Loading...</div>;
+  if (error) return <QueryState loading={false} error={error} onRetry={() => { void refetch(); }} />;
   if (data.length === 0) return <div className="la-deleted__empty">No deleted practitioners</div>;
 
   return (
@@ -152,12 +154,13 @@ function DeletedPractitionersList() {
 }
 
 function DeletedEcdcsList() {
-  const { data = [], isLoading } = useDeletedEcdcs();
+  const { data = [], isLoading, error, refetch } = useDeletedEcdcs();
   const { mutate: hardDelete, isPending: hardPending } = useHardDeleteEcdc();
   const { mutate: restore, isPending: restorePending } = useRestoreEcdc();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   if (isLoading) return <div className="la-deleted__loading">Loading...</div>;
+  if (error) return <QueryState loading={false} error={error} onRetry={() => { void refetch(); }} />;
   if (data.length === 0) return <div className="la-deleted__empty">No deleted ECDCs</div>;
 
   return (
@@ -195,12 +198,13 @@ function DeletedEcdcsList() {
 }
 
 function DeletedVisitsList() {
-  const { data = [], isLoading } = useDeletedVisits();
+  const { data = [], isLoading, error, refetch } = useDeletedVisits();
   const { mutate: hardDelete, isPending: hardPending } = useHardDeleteVisit();
   const { mutate: restore, isPending: restorePending } = useRestoreVisit();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   if (isLoading) return <div className="la-deleted__loading">Loading...</div>;
+  if (error) return <QueryState loading={false} error={error} onRetry={() => { void refetch(); }} />;
   if (data.length === 0) return <div className="la-deleted__empty">No deleted visits</div>;
 
   return (

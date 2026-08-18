@@ -582,3 +582,20 @@ body { margin: 0; font-family: 'Raleway', sans-serif; }
     display: none;
   }
 }
+.query-state {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+  margin: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border, #d9d9d9);
+  border-radius: 0.6rem;
+  background: #fff;
+  color: #444;
+}
+
+.query-state--error {
+  border-color: #d9a3a3;
+  background: #fff7f7;
+  color: #7a1f1f;
+}

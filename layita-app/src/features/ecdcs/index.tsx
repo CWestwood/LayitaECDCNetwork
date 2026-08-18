@@ -31,11 +31,12 @@ import {
 } from './_components';
 import { AdminSoftDeleteButton } from '../layita/components/AdminSoftDeleteButton';
 import { useAuth } from '../auth/useAuth';
+import { QueryState } from '../../app/QueryState';
 
 import '../../styles/shared.css';
 import '../../styles/ecdcMap.css';
 
-import { exportReportAsPDF, exportReportAsExcel } from './exportUtils';
+import { exportReportAsPDF, exportReportAsCsv } from './exportUtils';
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -60,13 +61,15 @@ export default function ECDCMap() {
   const [viewSelectedOnly, setViewSelectedOnly] = useState(false);
 
   // ── Data ────────────────────────────────────────────────────────────────────
-  const { data: ecdcs    = [], isLoading: ecdcsLoading    } = useEcdcsWithPractitioners();
-  const { data: landmarks = [], isLoading: landmarksLoading } = useLandmarks();
+  const { data: ecdcs = [], isLoading: ecdcsLoading, error: ecdcsError, refetch: refetchEcdcs } = useEcdcsWithPractitioners();
+  const { data: landmarks = [], isLoading: landmarksLoading, error: landmarksError, refetch: refetchLandmarks } = useLandmarks();
   const { mutate: deleteEcdc, isPending: deleteEcdcPending } = useDeleteEcdc();
 
   const {
     data: globalVisits = [],
     isLoading: visitsLoading,
+    error: visitsError,
+    refetch: refetchVisits,
   } = useGlobalVisitStats();
 
   const lastVisitMap = useMemo(() => {
@@ -79,6 +82,7 @@ export default function ECDCMap() {
   }, [globalVisits]);
 
   const loading = ecdcsLoading || landmarksLoading;
+  const loadError = ecdcsError ?? landmarksError ?? visitsError;
 
   const drawerBodyRef = useRef<HTMLDivElement>(null);
 
@@ -259,6 +263,13 @@ export default function ECDCMap() {
             <div className="spinner spinner--md" />
             Loading centres…
           </div>
+        )}
+        {!loading && loadError && (
+          <QueryState
+            loading={false}
+            error={loadError}
+            onRetry={() => { void Promise.all([refetchEcdcs(), refetchLandmarks(), refetchVisits()]); }}
+          />
         )}
 
         {/* ── Map ── */}
@@ -734,8 +745,8 @@ export default function ECDCMap() {
               <div className="ecdc-report-export-btns">
                 <button
                   className="ecdc-report-export-btn"
-                  title="Export as Excel"
-                  onClick={() => exportReportAsExcel(selectedEcdcs, lastVisitMap)}
+                  title="Export as CSV for Excel"
+                  onClick={() => exportReportAsCsv(selectedEcdcs, lastVisitMap)}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -743,7 +754,7 @@ export default function ECDCMap() {
                     <line x1="8" y1="13" x2="16" y2="13"/>
                     <line x1="8" y1="17" x2="16" y2="17"/>
                   </svg>
-                  Excel
+                  CSV
                 </button>
                 <button
                   className="ecdc-report-export-btn"

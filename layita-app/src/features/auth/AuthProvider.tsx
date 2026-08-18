@@ -26,7 +26,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const { data, error: profileError } = await supabase
       .from('profiles')
-      .select('id, name, role, layita_staff_id')
+      .select('id, name, role, layita_staff_id, is_active')
       .eq('id', nextSession.user.id)
       .maybeSingle();
 
@@ -34,13 +34,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (profileError) {
       setProfile(null);
       setError(new Error(`Profile could not be loaded: ${profileError.message}`));
+    } else if (!data || data.is_active === false) {
+      setSession(null);
+      setProfile(null);
+      setError(new Error(data ? 'This account has been deactivated.' : 'No application profile is linked to this account.'));
     } else {
-      setProfile(data ? {
+      setProfile({
         id: data.id,
         name: data.name,
         role: normalizeRole(data.role),
         layitaStaffId: data.layita_staff_id,
-      } : null);
+      });
     }
     setLoading(false);
   }, []);

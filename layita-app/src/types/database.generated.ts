@@ -88,6 +88,111 @@ export type Database = {
           },
         ]
       }
+      client_error_reports: {
+        Row: {
+          context: Json
+          correlation_id: string
+          created_at: string
+          event: string
+          id: string
+          message: string
+          route: string | null
+          user_id: string
+        }
+        Insert: {
+          context?: Json
+          correlation_id: string
+          created_at?: string
+          event: string
+          id?: string
+          message: string
+          route?: string | null
+          user_id: string
+        }
+        Update: {
+          context?: Json
+          correlation_id?: string
+          created_at?: string
+          event?: string
+          id?: string
+          message?: string
+          route?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_error_reports_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capture_submissions: {
+        Row: {
+          capture_id: string
+          client_created_at: string | null
+          correlation_id: string | null
+          form_version: string
+          request_hash: string
+          result: Json | null
+          result_visit_id: string | null
+          server_received_at: string
+          source: string
+          staff_id: string | null
+          submitted_by: string | null
+        }
+        Insert: {
+          capture_id: string
+          client_created_at?: string | null
+          correlation_id?: string | null
+          form_version: string
+          request_hash: string
+          result?: Json | null
+          result_visit_id?: string | null
+          server_received_at?: string
+          source: string
+          staff_id?: string | null
+          submitted_by?: string | null
+        }
+        Update: {
+          capture_id?: string
+          client_created_at?: string | null
+          correlation_id?: string | null
+          form_version?: string
+          request_hash?: string
+          result?: Json | null
+          result_visit_id?: string | null
+          server_received_at?: string
+          source?: string
+          staff_id?: string | null
+          submitted_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capture_submissions_result_visit_id_fkey"
+            columns: ["result_visit_id"]
+            isOneToOne: false
+            referencedRelation: "outreach_visits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_submissions_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "layita_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_submissions_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       correction_requests: {
         Row: {
           assigned_to_id: string | null
@@ -769,6 +874,7 @@ export type Database = {
         Row: {
           attempt_count: number
           byte_size: number | null
+          capture_id: string | null
           created_at: string
           id: string
           last_attempt_at: string | null
@@ -776,7 +882,7 @@ export type Database = {
           mime_type: string | null
           source_field: string
           source_filename: string
-          source_instance_id: string
+          source_instance_id: string | null
           source_system: string
           storage_bucket: string | null
           storage_path: string | null
@@ -788,6 +894,7 @@ export type Database = {
         Insert: {
           attempt_count?: number
           byte_size?: number | null
+          capture_id?: string | null
           created_at?: string
           id?: string
           last_attempt_at?: string | null
@@ -795,7 +902,7 @@ export type Database = {
           mime_type?: string | null
           source_field: string
           source_filename: string
-          source_instance_id: string
+          source_instance_id?: string | null
           source_system?: string
           storage_bucket?: string | null
           storage_path?: string | null
@@ -807,6 +914,7 @@ export type Database = {
         Update: {
           attempt_count?: number
           byte_size?: number | null
+          capture_id?: string | null
           created_at?: string
           id?: string
           last_attempt_at?: string | null
@@ -814,7 +922,7 @@ export type Database = {
           mime_type?: string | null
           source_field?: string
           source_filename?: string
-          source_instance_id?: string
+          source_instance_id?: string | null
           source_system?: string
           storage_bucket?: string | null
           storage_path?: string | null
@@ -1760,6 +1868,13 @@ export type Database = {
         Insert: { attendance_status?: string; notes?: string | null; practitioner_id: string; recorded_at?: string; recorded_by_id?: string | null; session_id: string }
         Update: { attendance_status?: string; notes?: string | null; practitioner_id?: string; recorded_at?: string; recorded_by_id?: string | null; session_id?: string }
         Relationships: [
+          {
+            foreignKeyName: "outreach_attachments_capture_id_fkey"
+            columns: ["capture_id"]
+            isOneToOne: false
+            referencedRelation: "capture_submissions"
+            referencedColumns: ["capture_id"]
+          },
           { foreignKeyName: "training_session_attendance_practitioner_id_fkey"; columns: ["practitioner_id"]; isOneToOne: false; referencedRelation: "practitioners"; referencedColumns: ["id"] },
           { foreignKeyName: "training_session_attendance_session_id_fkey"; columns: ["session_id"]; isOneToOne: false; referencedRelation: "training_sessions"; referencedColumns: ["id"] },
         ]
@@ -2071,6 +2186,28 @@ export type Database = {
       }
     }
     Functions: {
+      submit_outreach_capture: {
+        Args: {
+          p_actor_id?: string | null
+          p_capture_id: string
+          p_client_created_at?: string | null
+          p_correlation_id?: string | null
+          p_form_version: string
+          p_payload: Json
+          p_source: string
+        }
+        Returns: Json
+      }
+      record_client_error: {
+        Args: {
+          p_context?: Json
+          p_correlation_id: string
+          p_event: string
+          p_message: string
+          p_route?: string | null
+        }
+        Returns: string
+      }
       manage_planned_visit: {
         Args: { p_assigned_to?: string | null; p_completed_visit_id?: string | null; p_notes?: string | null; p_outreach_type?: string | null; p_plan_id: string; p_reason?: string | null; p_scheduled_date?: string | null; p_status?: string | null; p_update_assignee?: boolean }
         Returns: Json

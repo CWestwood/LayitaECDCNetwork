@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { useReprocessSubmission, useSubmissions } from "../api/useSubmissions";
+import { useClientErrors, useReprocessSubmission, useSubmissions } from "../api/useSubmissions";
 import "../../../styles/practitioners.css";
 import "../../../styles/deleted-records.css";
+import { QueryState } from "../../../app/QueryState";
 
 function StatusBadge({ state }: { state: string }) {
   let colorClass = "p2-visit-badge--none";
@@ -19,7 +20,8 @@ function toggleSet(current: Set<string>, id: string) {
 }
 
 export default function KoboMonitor() {
-  const { data: submissions = [], isLoading } = useSubmissions();
+  const { data: submissions = [], isLoading, error, refetch } = useSubmissions();
+  const { data: clientErrors = [], error: clientErrorsError, refetch: refetchClientErrors } = useClientErrors();
   const reprocessSubmission = useReprocessSubmission();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -63,8 +65,34 @@ export default function KoboMonitor() {
 
       <div className="p2-body" style={{ flexDirection: "column", padding: "24px", overflowY: "auto" }}>
         <div style={{ maxWidth: "1000px", margin: "0 auto", width: "100%" }}>
+          <section className="dq-section" aria-labelledby="client-errors-title">
+            <div className="dq-section__header">
+              <div>
+                <h2 id="client-errors-title" className="dq-section__title">Recent application errors</h2>
+                <p className="dq-section__subtitle">Sanitized browser failures. Use the correlation ID when reporting a problem.</p>
+              </div>
+            </div>
+            {clientErrorsError ? (
+              <QueryState loading={false} error={clientErrorsError} onRetry={() => { void refetchClientErrors(); }} />
+            ) : clientErrors.length === 0 ? (
+              <div className="p2-empty">No application errors recorded.</div>
+            ) : (
+              <div className="audit-list">
+                {clientErrors.slice(0, 10).map((row) => (
+                  <div className="audit-event" key={row.id}>
+                    <div className="audit-event__header">
+                      <span className="kobo-summary"><strong>{row.event}</strong><span>{row.message}</span><small>{row.route ?? 'Unknown route'} · {row.profile?.name ?? 'Unknown user'}</small></span>
+                      <span className="audit-event__when">{new Date(row.created_at).toLocaleString('en-ZA')}<small>{row.correlation_id}</small></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
           {isLoading ? (
             <div className="p2-loading"><div className="p2-spinner" /> Loading submissions...</div>
+          ) : error ? (
+            <QueryState loading={false} error={error} onRetry={() => { void refetch(); }} />
           ) : filtered.length === 0 ? (
             <div className="p2-empty">No submissions match your search.</div>
           ) : (

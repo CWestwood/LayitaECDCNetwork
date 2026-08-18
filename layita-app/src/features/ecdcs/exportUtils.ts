@@ -42,13 +42,12 @@ export async function exportReportAsPDF(drawerBodyEl: HTMLElement) {
   pdf.save(`ecdc-report-${today()}.pdf`);
 }
 
-// ─── Excel export ─────────────────────────────────────────────────────────────
+// ─── Spreadsheet-safe CSV export ─────────────────────────────────────────────
 
-export async function exportReportAsExcel(
+export function exportReportAsCsv(
   selectedEcdcs: EcdcWithPractitioners[],
   lastVisitMap: Map<string, string> | null,
 ) {
-  const XLSX = await import('xlsx');
   const rows: Record<string, string>[] = [];
 
   for (const ecdc of selectedEcdcs) {
@@ -78,17 +77,21 @@ export async function exportReportAsExcel(
     }
   }
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Selected ECDCs');
-
-  // Auto-fit column widths
-  const colWidths = Object.keys(rows[0] ?? {}).map((key) => ({
-    wch: Math.max(key.length, ...rows.map((r) => (r[key] ?? '').length)) + 2,
-  }));
-  ws['!cols'] = colWidths;
-
-  XLSX.writeFile(wb, `ecdc-report-${today()}.xlsx`);
+  const headings = Object.keys(rows[0] ?? {
+    'Centre Name': '', Area: '', Practitioner: '', Group: '',
+    'Contact 1': '', 'Contact 2': '', 'Last Visit': '',
+  });
+  const csv = [
+    headings.map(csvCell).join(','),
+    ...rows.map((row) => headings.map((heading) => csvCell(row[heading] ?? '')).join(',')),
+  ].join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `ecdc-report-${today()}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,4 +99,9 @@ export async function exportReportAsExcel(
 function today() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function csvCell(value: string) {
+  const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
 }

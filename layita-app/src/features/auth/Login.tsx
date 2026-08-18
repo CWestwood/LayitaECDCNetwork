@@ -8,7 +8,7 @@ import logo from '../../assets/layitalogosvg.svg';
 import '../../styles/auth.css';
 
 const Login = () => {
-  const { session, loading: authLoading } = useAuth();
+  const { session, loading: authLoading, error: authError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -73,7 +73,7 @@ const Login = () => {
               {loading ? 'Logging in...' : 'Login'}
             </button>
 
-            {error && <p className="auth-error">{error}</p>}
+            {(error || authError) && <p className="auth-error">{error ?? authError?.message}</p>}
           </form>
         </div>
       </main>

@@ -692,6 +692,95 @@ The implementation decisions are: visit metrics remain visit-level when several 
 
 Every pull request should run formatting, TS-aware lint, strict typecheck, unit/component tests, Edge fixtures, production build, migration reset/lint, schema-contract tests, and a small unauthenticated/authenticated E2E smoke suite.
 
+## Website capture transition: recommended sequence
+
+**Decision:** Introduce direct website capture only after completing the minimum resilience foundation below. Do not wait for every cleanup item, and do not replace Kobo immediately. The website should first become an authenticated, online-primary capture path with draft recovery while Kobo remains the offline and operational fallback.
+
+The architectural goal is one versioned canonical submission contract used by both channels:
+
+```text
+Website form -> canonical capture payload -> transactional capture RPC
+Kobo webhook -> Kobo translation       -> transactional capture RPC
+                                              -> domain records
+                                              -> audit/provenance
+                                              -> reconciliation when uncertain
+
+Website attachment queue -> private storage -> attachment status/provenance
+```
+
+This ordering prevents a second ingestion path from duplicating the current processor's multi-request partial-state risk. It also allows the website form to reuse the existing authentication, profile-to-staff ownership, canonical reporting, multi-practitioner, audit, and reconciliation foundations.
+
+### Capture Phase A — Minimum resilience foundation
+
+Complete only the resilience work that directly protects new data capture:
+
+1. Add CI for frontend lint/typecheck/tests/build, Edge fixtures and type-checking, migration reset/lint, database contracts, and a small role-aware browser smoke suite.
+2. Upgrade production dependencies with available security fixes and explicitly replace, isolate, or accept the risk of dependencies with no maintained fix.
+3. Add role-specific database tests for administrator, manager, data-capturer, library, inactive user, missing-profile, and missing-staff-link cases.
+4. Standardize visible loading, empty, permission, timeout, retry, and failure states so an API or RLS failure cannot appear as an empty dataset.
+5. Establish structured error reporting and correlation identifiers linking browser actions, Edge requests, database submissions, and attachment transfers.
+
+**Exit gate:** The automated checks run on every change; role boundaries are covered by integration tests; dependency risks are recorded; failed requests are visible to users and diagnosable by operators.
+
+### Capture Phase B — Canonical transactional submission boundary
+
+1. Define a versioned canonical capture payload independent of Kobo field names. It must cover outreach type and outcome, capture times, ECDC, one or more practitioners, staff ownership, attendance, books, transport, coordinates, comments, and attachment metadata.
+2. Define conditional validation and invariants once, including required fields per outreach branch, attendance bounds, non-negative amounts, valid coordinates, active/inactive entity rules, and treatment of missed or alternative activities.
+3. Add a client-generated immutable `capture_id`, `source`, `form_version`, `client_created_at`, and `server_received_at` contract.
+4. Implement one `submit_outreach_capture(...)` PostgreSQL RPC that validates authorization, derives the staff identity from the authenticated profile, applies all domain writes in one transaction, records audit/provenance, and returns a typed result.
+5. Make `capture_id` idempotent so retries return the original result rather than creating duplicates.
+6. Return uncertain practitioner/ECDC identities to reconciliation rather than creating unreviewed canonical duplicates.
+7. Refactor the Kobo processor into a translation adapter that calls the same capture RPC. Retain raw payloads, processing attempts, warnings, and reconciliation as Kobo-specific boundary concerns.
+8. Add contract tests for valid branches, invalid payloads, unauthorized roles, duplicate delivery, transaction rollback, repeated submission, multiple practitioners, and reconciliation outcomes.
+
+**Exit gate:** Kobo fixtures and historical contract tests pass through the shared submission boundary; deliberately failing any domain write leaves no partial canonical changes; duplicate delivery is idempotent.
+
+### Capture Phase C — Authenticated website form pilot
+
+1. Build the form from the canonical contract rather than copying the Kobo questionnaire or payload structure.
+2. Use searchable canonical ECDC and practitioner selectors, similarity warnings, multiple-practitioner selection, and an explicit “not found / request review” path.
+3. Support browser drafts with recovery after refresh or accidental navigation. A draft must display its form version and last-saved time.
+4. Derive the submitting staff member on the server. Do not accept a browser-supplied staff identity as authoritative.
+5. Display an explicit state for Draft, Submitting, Submitted, Failed, and Needs review, including the immutable capture/reference ID.
+6. Add component and E2E coverage for conditional fields, validation, session expiry, retry, double-submit prevention, accessibility, and representative phone widths.
+7. Pilot with a small set of users while Kobo remains available. Compare counts, field completeness, duplicate rate, reconciliation workload, completion time, and support incidents between channels.
+
+**Exit gate:** Pilot users can complete the principal outreach branches on representative phones; every accepted submission appears exactly once in canonical reporting or in an actionable reconciliation state; Kobo and website totals reconcile.
+
+### Capture Phase D — Attachments and interrupted-transfer recovery
+
+1. Upload images separately from the canonical record so a failed image transfer does not lose the structured submission.
+2. Use private Supabase Storage policies, file type/size validation, mobile image compression, and durable attachment status/provenance.
+3. Support independent retry, abandoned-upload cleanup, and clear “record saved; attachment pending” feedback.
+4. Test expired sessions, network interruption, repeated uploads, unsupported files, storage failure, and unauthorized access.
+
+**Exit gate:** Structured captures remain safe during attachment failures; operators can identify and retry pending transfers; storage access is role-appropriate and tested.
+
+### Capture Phase E — Scale and primary-channel rollout
+
+1. Replace unpaginated operational reads and client-side totals with explicit pagination and server-side reporting aggregates before capture volume approaches the API row cap.
+2. Monitor submission success, latency, duplicates, reconciliation volume, pending attachments, form-version distribution, and client/browser failures.
+3. Roll out by team or region with a documented fallback, support owner, backup, rollback, and incident procedure.
+4. Promote the website to the primary channel only after a stable pilot period and reconciled reporting. Retain Kobo temporarily as a clearly identified contingency source.
+
+**Exit gate:** Reporting remains complete above the previous row limit; monitoring and support procedures are active; production capture has a proven fallback and no unexplained cross-channel discrepancies.
+
+### Capture Phase F — Optional offline-first replacement
+
+Implement this phase only if field evidence shows that draft recovery and online submission are insufficient. A full Kobo replacement requires an installable PWA, IndexedDB storage for records and images, a visible outbox, background/resumable synchronization, token-expiry recovery, conflict handling, and migration of drafts created under older form versions.
+
+**Exit gate:** Multi-day offline fixtures survive browser/device restarts and application upgrades; queued records synchronize exactly once; conflicts and permanently rejected submissions are visible and recoverable without database intervention.
+
+### Work that need not block the website capture pilot
+
+- Splitting every oversized UI component.
+- Broad CSS consolidation outside the capture workflow.
+- General visual refinement unrelated to capture usability or accessibility.
+- Removal of every compatibility column or legacy component.
+- Full offline capability before the online pilot demonstrates that it is operationally required.
+
+Stale schema snapshots and the starter README are not runtime blockers, but the schema source of truth and the capture deployment/recovery procedure must be unambiguous before the pilot reaches production.
+
 ## Decisions required before implementation
 
 1. Should managers have quality/audit/merge access as the existing RLS and role matrix suggest?
