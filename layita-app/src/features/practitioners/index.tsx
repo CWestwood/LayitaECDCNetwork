@@ -1,6 +1,6 @@
 // src/features/practitioners/index.tsx
 
-import { useMemo, useCallback, useState, useEffect } from "react";
+import { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { resolveGroupColor, resolveGroupNameShortForm } from "../../lib/Groupcolors";
 import { TRAINING_FILTERS } from "../../lib/Trainingfilters";
@@ -11,11 +11,14 @@ import PractitionerCard from "./PractitionerCard";
 import {DetailPanel, DetailEmpty} from "./DetailPanel";
 import {
   daysSince,
+  fmtDate,
   Icon,
   Icons,
   GridIcon,
   ListIcon,
 } from "./_components";
+import { exportReportAsPDF } from "../ecdcs/exportUtils";
+import { exportPractitionersAsExcel } from "./exportUtils";
 import "../../styles/practitioners.css";
 
 // ─── ../lib ────────────────────────────────────────────────────────────────
@@ -50,6 +53,8 @@ export default function Practitioners() {
   const [trainingMode,    setTrainingMode]    = useState<"has" | "needs">("has");
   const [viewSelectedOnly, setViewSelectedOnly] = useState(false);
   const [hasProcessedUrl, setHasProcessedUrl] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const reportBodyRef = useRef<HTMLDivElement>(null);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const { data: practitioners = [], isLoading: pracLoading  } = usePractitioners();
@@ -120,7 +125,7 @@ export default function Practitioners() {
       .sort((a, b) => a.localeCompare(b));
   }, [practitioners]);
 
-  const filtered = useMemo(() => {
+  const filteredByCriteria = useMemo(() => {
     const q = search.toLowerCase().trim();
 
     const list = practitioners.filter((p) => {
@@ -133,8 +138,7 @@ export default function Practitioners() {
         const hasTraining = (p.training as Record<string, boolean> | null)?.[k] === true;
         return trainingMode === "has" ? hasTraining : !hasTraining;
       });
-      const matchSelected = !viewSelectedOnly || selectedIds.has(p.id);
-      return matchSearch && matchGroup && matchTraining && matchSelected;
+      return matchSearch && matchGroup && matchTraining;
     });
 
     return [...list].sort((a, b) => {
@@ -150,7 +154,19 @@ export default function Practitioners() {
         default: return 0;
       }
     });
-  }, [practitioners, search, activeGroups, activeTraining, trainingMode, sortKey, lastVisitMap, viewSelectedOnly, selectedIds]);
+  }, [practitioners, search, activeGroups, activeTraining, trainingMode, sortKey, lastVisitMap]);
+
+  const filtered = useMemo(
+    () => viewSelectedOnly
+      ? filteredByCriteria.filter((practitioner) => selectedIds.has(practitioner.id))
+      : filteredByCriteria,
+    [filteredByCriteria, selectedIds, viewSelectedOnly],
+  );
+
+  const selectedPractitioners = useMemo(
+    () => practitioners.filter((practitioner) => selectedIds.has(practitioner.id)),
+    [practitioners, selectedIds],
+  );
 
   const stats = useMemo(() => ({
     total:   practitioners.length,
@@ -185,7 +201,37 @@ export default function Practitioners() {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       const strId = String(id);
-      next.has(strId) ? next.delete(strId) : next.add(strId);
+      if (next.has(strId)) {
+        next.delete(strId);
+        if (next.size === 0) {
+          setViewSelectedOnly(false);
+          setReportOpen(false);
+        }
+      } else {
+        next.add(strId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(filteredByCriteria.map((practitioner) => practitioner.id)));
+  }, [filteredByCriteria]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setViewSelectedOnly(false);
+    setReportOpen(false);
+  }, []);
+
+  const removeFromSelection = useCallback((id: string) => {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      next.delete(id);
+      if (next.size === 0) {
+        setViewSelectedOnly(false);
+        setReportOpen(false);
+      }
       return next;
     });
   }, []);
@@ -220,19 +266,35 @@ export default function Practitioners() {
         <header className="p2-topbar">
           <h1 className="p2-topbar__title">Practitioners</h1>
 
-          {selectedIds.size > 0 && (
-            <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }}>
+          <div className="p2-selection-actions" aria-label="Practitioner selection actions">
+            <button
+              className="p2-chip"
+              onClick={selectAll}
+              disabled={filteredByCriteria.length === 0}
+            >
+              Select all ({filteredByCriteria.length})
+            </button>
+            {selectedIds.size > 0 && (
+              <>
+                <span className="p2-selection-count">{selectedIds.size} selected</span>
+                <button className="p2-chip p2-chip--clear" onClick={clearSelection}>
+                  Clear
+                </button>
               <button 
                 className={`p2-chip ${viewSelectedOnly ? "p2-chip--active" : ""}`} 
                 onClick={() => setViewSelectedOnly(!viewSelectedOnly)}
               >
                 {viewSelectedOnly ? "Showing selected" : "Show selected only"}
               </button>
-              <button className="p2-chip p2-chip--active" onClick={handleViewOnMap} style={{ background: '#3b82f6', color: 'white', border: 'none' }}>
+              <button className="p2-chip p2-chip--primary" onClick={handleViewOnMap}>
                 View {selectedIds.size} on Map
               </button>
-            </div>
-          )}
+                <button className="p2-chip p2-chip--primary" onClick={() => setReportOpen(true)}>
+                  Export
+                </button>
+              </>
+            )}
+          </div>
 
           <div className="p2-topbar__controls">
             <div className="p2-search">
@@ -432,6 +494,112 @@ export default function Practitioners() {
           </div>
 
         </div>
+
+        {reportOpen && selectedPractitioners.length > 0 && (
+          <div className="p2-report-overlay" onClick={() => setReportOpen(false)}>
+            <section
+              className="p2-report-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Selected practitioner export"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header className="p2-report-drawer__header">
+                <div className="p2-report-drawer__title">
+                  Selected Practitioners
+                  <span>{selectedPractitioners.length} practitioner{selectedPractitioners.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="p2-report-export-actions">
+                  <button
+                    type="button"
+                    title="Export as Excel"
+                    onClick={() => void exportPractitionersAsExcel(selectedPractitioners, lastVisitMap)}
+                  >
+                    Excel
+                  </button>
+                  <button
+                    type="button"
+                    title="Export as PDF"
+                    onClick={() => reportBodyRef.current && exportReportAsPDF(reportBodyRef.current, 'practitioner-report')}
+                  >
+                    PDF
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="p2-report-drawer__close"
+                  aria-label="Close export report"
+                  onClick={() => setReportOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+
+              <div className="p2-report-drawer__body" ref={reportBodyRef}>
+                <table className="p2-report-table">
+                  <thead>
+                    <tr>
+                      <th>Practitioner</th>
+                      <th>ECDC / Area</th>
+                      <th>Group</th>
+                      <th>Contact</th>
+                      <th>Last Visit</th>
+                      <th aria-label="Remove from report" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedPractitioners.map((practitioner) => {
+                      const groupColor = resolveGroupColor(practitioner.group?.group_name);
+                      const lastVisit = lastVisitMap.get(practitioner.id);
+                      const lastVisitDisplay = fmtDate(lastVisit);
+                      const overdue = daysSince(lastVisit) > 180;
+                      return (
+                        <tr key={practitioner.id}>
+                          <td className="p2-report-table__name">{practitioner.name || '—'}</td>
+                          <td>
+                            <strong>{practitioner.ecdc?.name || 'No ECDC'}</strong>
+                            {practitioner.ecdc?.area && <small>{practitioner.ecdc.area}</small>}
+                          </td>
+                          <td>
+                            {practitioner.group?.group_name ? (
+                              <span className="p2-report-group" style={{ borderColor: groupColor.fill, color: groupColor.fill }}>
+                                <i style={{ background: groupColor.fill }} />
+                                {resolveGroupNameShortForm(practitioner.group.group_name)}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td>
+                            {practitioner.contact_number1 || practitioner.contact_number2 ? (
+                              <>
+                                {practitioner.contact_number1 && <span>{practitioner.contact_number1}</span>}
+                                {practitioner.contact_number2 && <span>{practitioner.contact_number2}</span>}
+                              </>
+                            ) : '—'}
+                          </td>
+                          <td>
+                            <span className={`p2-report-visit ${!lastVisitDisplay ? 'p2-report-visit--never' : overdue ? 'p2-report-visit--overdue' : 'p2-report-visit--ok'}`}>
+                              {lastVisitDisplay || 'Never'}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="p2-report-remove"
+                              aria-label={`Remove ${practitioner.name || 'practitioner'} from report`}
+                              onClick={() => removeFromSelection(practitioner.id)}
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

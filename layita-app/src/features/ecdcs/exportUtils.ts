@@ -2,7 +2,10 @@ import type { EcdcWithPractitioners } from './api/types';
 
 // ─── PDF export ───────────────────────────────────────────────────────────────
 
-export async function exportReportAsPDF(drawerBodyEl: HTMLElement) {
+export async function exportReportAsPDF(
+  drawerBodyEl: HTMLElement,
+  filenamePrefix = 'ecdc-report',
+) {
   const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
     import('html2canvas'),
     import('jspdf'),
@@ -39,7 +42,7 @@ export async function exportReportAsPDF(drawerBodyEl: HTMLElement) {
     y = margin;
   }
 
-  pdf.save(`ecdc-report-${today()}.pdf`);
+  pdf.save(`${filenamePrefix}-${today()}.pdf`);
 }
 
 // ─── Excel export ─────────────────────────────────────────────────────────────
