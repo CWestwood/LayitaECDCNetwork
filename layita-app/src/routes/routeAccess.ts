@@ -1,6 +1,7 @@
 import type { Capability } from '../features/auth/capabilities';
 
 export const ROUTE_ACCESS = {
+  capture: { path: '/capture', capability: 'submit_capture' },
   myWork: { path: '/my-work', capability: 'manage_own_work' },
   planning: { path: '/outreach-planning', capability: 'manage_plans' },
   training: { path: '/training', capability: 'manage_training' },

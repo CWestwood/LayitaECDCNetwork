@@ -65,6 +65,14 @@ export interface EcdcOption {
   number_children: string | null;
 }
 
+export interface CaptureReviewRequest {
+  id: string;
+  created_at: string;
+  target_table: string;
+  description: string;
+  status: 'open' | 'reviewing';
+}
+
 function severity(value: string | null): DataQualityMetric['severity'] {
   return value === 'critical' || value === 'high' || value === 'medium' || value === 'low'
     ? value
@@ -112,6 +120,52 @@ export function useUnmatchedRecords() {
     queryKey: ['kobo-unmatched'],
     queryFn: fetchUnmatchedRecords,
     staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useCaptureReviewRequests() {
+  return useQuery<CaptureReviewRequest[]>({
+    queryKey: ['capture-review-requests'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('correction_requests')
+        .select('id, created_at, target_table, description, status')
+        .eq('issue_type', 'capture_identity_not_found')
+        .in('status', ['open', 'reviewing'])
+        .order('created_at', { ascending: true });
+      if (error) throw new Error(error.message);
+      return (data ?? []).flatMap((row): CaptureReviewRequest[] => (
+        row.status === 'open' || row.status === 'reviewing' ? [{ ...row, status: row.status }] : []
+      ));
+    },
+    staleTime: 1000 * 60,
+  });
+}
+
+export function useUpdateCaptureReviewRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, action, notes }: { id: string; action: 'reviewing' | 'resolved'; notes?: string }) => {
+      if (action === 'reviewing') {
+        const { error } = await supabase.from('correction_requests').update({ status: 'reviewing' }).eq('id', id);
+        if (error) throw new Error(error.message);
+        return;
+      }
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) throw new Error(authError?.message ?? 'Your session has expired.');
+      const { error } = await supabase.from('correction_requests').update({
+        status: 'resolved',
+        resolution_notes: notes?.trim() || 'Identity reviewed and resolved.',
+        resolved_at: new Date().toISOString(),
+        resolved_by_id: authData.user.id,
+      }).eq('id', id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['capture-review-requests'] });
+      toast.success('Website capture review updated');
+    },
+    onError: (error) => toast.error(`Review could not be updated: ${error.message}`),
   });
 }
 

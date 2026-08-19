@@ -43,6 +43,19 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    to: "/capture",
+    label: "Record Outreach",
+    capability: "submit_capture",
+    mobilePrimary: true,
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+        <path d="m15 5 3 3" />
+      </svg>
+    ),
+  },
+  {
     to: "/practitioners",
     label: "Practitioners",
     mobilePrimary: true,

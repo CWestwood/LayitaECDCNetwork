@@ -737,6 +737,8 @@ Complete only the resilience work that directly protects new data capture:
 
 ### Capture Phase C — Authenticated website form pilot
 
+**Implementation status (2026-08-18):** The software pilot foundation is implemented at `/capture`, including canonical submission, draft recovery, identity review, explicit states, and automated component/contract coverage. The operational pilot and cross-channel reconciliation are still required before the exit gate can pass. See [capture-phase-c-pilot.md](capture-phase-c-pilot.md).
+
 1. Build the form from the canonical contract rather than copying the Kobo questionnaire or payload structure.
 2. Use searchable canonical ECDC and practitioner selectors, similarity warnings, multiple-practitioner selection, and an explicit “not found / request review” path.
 3. Support browser drafts with recovery after refresh or accidental navigation. A draft must display its form version and last-saved time.

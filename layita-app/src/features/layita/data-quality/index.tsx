@@ -12,6 +12,8 @@ import {
   useUnmatchedRecords,
   useDuplicateVisitCandidates,
   useResolveDuplicateVisit,
+  useCaptureReviewRequests,
+  useUpdateCaptureReviewRequest,
   type DuplicateVisitSummary,
 } from '../api/useDataQuality';
 import '../../../styles/data-quality.css';
@@ -61,6 +63,36 @@ function FieldChoice({
 
 function selectedById<T extends { id: string }>(rows: T[], id: string) {
   return rows.find((row) => row.id === id) ?? null;
+}
+
+function CaptureReviewPanel() {
+  const { data: requests = [], isLoading, error, refetch } = useCaptureReviewRequests();
+  const update = useUpdateCaptureReviewRequest();
+  const [notes, setNotes] = useState<Record<string, string>>({});
+
+  return (
+    <section className="dq-section">
+      <div className="dq-section__header">
+        <div>
+          <h2 className="dq-section__title">Website capture identity reviews</h2>
+          <p className="dq-section__subtitle">Resolve ECDCs or practitioners that pilot users could not find. No duplicate is created while a request is open.</p>
+        </div>
+        <span className="dq-review-count">{requests.length} open</span>
+      </div>
+      {isLoading ? <div className="dq-empty">Loading website capture reviews…</div>
+        : error ? <QueryState loading={false} error={error} onRetry={() => { void refetch(); }} />
+          : requests.length === 0 ? <div className="dq-empty">No website capture identities need review.</div>
+            : <div className="dq-review-list">{requests.map((request) => <article className="dq-review-card" key={request.id}>
+              <div className="dq-review-card__meta"><strong>{request.target_table === 'ecdc_list' ? 'ECDC' : 'Practitioner'}</strong><span>{new Date(request.created_at).toLocaleString()}</span><span>{request.status === 'reviewing' ? 'In review' : 'Open'}</span></div>
+              <pre>{request.description}</pre>
+              <label className="dq-merge-field"><span className="dq-merge-field__label">Resolution note</span><input className="dq-input" value={notes[request.id] ?? ''} onChange={(event) => setNotes((current) => ({ ...current, [request.id]: event.target.value }))} placeholder="How was the identity resolved?" /></label>
+              <div className="dq-actions">
+                {request.status === 'open' && <button className="dq-button" disabled={update.isPending} onClick={() => update.mutate({ id: request.id, action: 'reviewing' })}>Start review</button>}
+                <button className="dq-button dq-button--primary" disabled={update.isPending || (notes[request.id]?.trim().length ?? 0) < 5} onClick={() => update.mutate({ id: request.id, action: 'resolved', notes: notes[request.id] })}>Mark resolved</button>
+              </div>
+            </article>)}</div>}
+    </section>
+  );
 }
 
 function MergeRecordsPanel() {
@@ -306,6 +338,7 @@ export default function DataQualityPage() {
             onRetry={() => { void Promise.all([refetchMetrics(), refetchUnmatched(), refetchPractitioners()]); }}
           />
         )}
+        <CaptureReviewPanel />
         <MergeRecordsPanel />
 
         <DuplicateVisitsPanel />

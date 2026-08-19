@@ -2,6 +2,7 @@ export type AppRole = 'administrator' | 'manager' | 'datacapturer' | 'library';
 
 export type Capability =
   | 'manage_own_work'
+  | 'submit_capture'
   | 'view_quality'
   | 'reprocess_kobo'
   | 'manage_plans'
@@ -11,6 +12,7 @@ export type Capability =
 
 const ROLE_CAPABILITIES: Record<AppRole, ReadonlySet<Capability>> = {
   administrator: new Set([
+    'submit_capture',
     'view_quality',
     'reprocess_kobo',
     'manage_plans',
@@ -18,8 +20,8 @@ const ROLE_CAPABILITIES: Record<AppRole, ReadonlySet<Capability>> = {
     'restore_records',
     'manage_users',
   ]),
-  manager: new Set(['manage_own_work', 'view_quality', 'manage_training']),
-  datacapturer: new Set(['manage_own_work']),
+  manager: new Set(['manage_own_work', 'submit_capture', 'view_quality', 'manage_training']),
+  datacapturer: new Set(['manage_own_work', 'submit_capture']),
   library: new Set(),
 };
 

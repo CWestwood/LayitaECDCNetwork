@@ -8,6 +8,7 @@ import LoadingScreen from './layouts/LoadingScreen';
 import { ROUTE_ACCESS } from './routes/routeAccess';
 
 const Dashboard = lazy(() => import('./features/dashboard'));
+const Capture = lazy(() => import('./features/capture'));
 const MyWork = lazy(() => import('./features/layita/my-work'));
 const EcdcMap = lazy(() => import('./features/ecdcs'));
 const Login = lazy(() => import('./features/auth/Login'));
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/map" element={<EcdcMap />} />
               <Route path="/visits" element={<OutreachVisits />} />
               <Route path="/practitioners" element={<Practitioners />} />
+              {capabilityRoute(ROUTE_ACCESS.capture.capability, ROUTE_ACCESS.capture.path, <Capture />)}
               {capabilityRoute(ROUTE_ACCESS.myWork.capability, ROUTE_ACCESS.myWork.path, <MyWork />)}
               {capabilityRoute(ROUTE_ACCESS.planning.capability, ROUTE_ACCESS.planning.path, <OutreachPlanning />)}
               {capabilityRoute(ROUTE_ACCESS.training.capability, ROUTE_ACCESS.training.path, <Training />)}
